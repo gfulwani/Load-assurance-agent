@@ -1,0 +1,17 @@
+---
+applications:
+  - name: load-assurance-agent
+    memory: 256M
+    disk_quota: 512M
+    instances: 1
+    buildpacks:
+      - nodejs_buildpack
+    command: npm start
+    path: .
+    random-route: true
+    env:
+      NODE_ENV: production
+    services:
+      - connect-lite
+      - destination-lite
+      - default_aicore

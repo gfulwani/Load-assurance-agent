@@ -1,0 +1,243 @@
+<mvc:View
+    controllerName="com.loadassurance.agent.controller.Worklist"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+    xmlns:f="sap.f"
+    displayBlock="true">
+
+    <Page
+        id="worklistPage"
+        title="Load Assurance Agent"
+        showNavButton="false"
+        class="sapUiContentPadding">
+
+        <!-- ═══ Page Sub-Header: KPI Strip ══════════════════════════ -->
+        <subHeader>
+            <Bar>
+                <contentLeft>
+                    <ObjectNumber
+                        id="kpiTotal"
+                        number="{worklistView>/totalCount}"
+                        unit="HUs"
+                        emphasized="true" />
+                    <Text text=" · " class="sapUiSmallMarginBeginEnd" />
+                    <ObjectStatus
+                        id="kpiPassed"
+                        text="{worklistView>/passedCount} Passed"
+                        state="Success"
+                        icon="sap-icon://accept" />
+                    <Text text=" · " class="sapUiSmallMarginBeginEnd" />
+                    <ObjectStatus
+                        id="kpiFailed"
+                        text="{worklistView>/failedCount} Failed"
+                        state="Error"
+                        icon="sap-icon://error" />
+                    <Text text=" · " class="sapUiSmallMarginBeginEnd" />
+                    <ObjectStatus
+                        id="kpiReview"
+                        text="{worklistView>/reviewCount} Review"
+                        state="Warning"
+                        icon="sap-icon://warning" />
+                </contentLeft>
+                <contentRight>
+                    <ObjectStatus
+                        id="kpiConfidence"
+                        text="Avg. Confidence: {worklistView>/avgConfidence}%"
+                        state="Information"
+                        icon="sap-icon://ai" />
+                </contentRight>
+            </Bar>
+        </subHeader>
+
+        <!-- ═══ Main Content ════════════════════════════════════════ -->
+        <content>
+            <Table
+                id="huTable"
+                items="{
+                    path: '/HandlingUnits',
+                    parameters: {
+                        $orderby: 'status desc,severity asc',
+                        $select: 'ID,huID,outboundDelivery,status,severity,expectedWeight,actualWeight,validationConfidence,issueDescription'
+                    }
+                }"
+                mode="None"
+                growing="true"
+                growingThreshold="25"
+                growingScrollToLoad="true"
+                sticky="ColumnHeaders,HeaderToolbar"
+                busyIndicatorDelay="0"
+                updateFinished=".onTableUpdateFinished"
+                class="sapUiNoContentPadding">
+
+                <!-- Toolbar -->
+                <headerToolbar>
+                    <OverflowToolbar>
+                        <Title
+                            id="tableTitle"
+                            text="Handling Units ({worklistView>/tableItemCount})"
+                            level="H3"
+                            titleStyle="H3" />
+                        <ToolbarSpacer />
+                        <SearchField
+                            id="searchField"
+                            width="18rem"
+                            placeholder="Search by HU ID or delivery…"
+                            search=".onSearch"
+                            liveChange=".onSearch" />
+                        <SegmentedButton
+                            id="statusFilter"
+                            selectionChange=".onStatusFilterChange"
+                            selectedKey="{worklistView>/selectedStatusFilter}">
+                            <items>
+                                <SegmentedButtonItem key="All"    text="All" />
+                                <SegmentedButtonItem key="Failed" text="Failed" />
+                                <SegmentedButtonItem key="Review" text="Review" />
+                                <SegmentedButtonItem key="Passed" text="Passed" />
+                            </items>
+                        </SegmentedButton>
+                        <Button
+                            id="refreshButton"
+                            icon="sap-icon://refresh"
+                            tooltip="Refresh"
+                            press=".onRefresh"
+                            type="Transparent" />
+                    </OverflowToolbar>
+                </headerToolbar>
+
+                <!-- Column Headers -->
+                <columns>
+                    <Column
+                        id="colHuID"
+                        width="12rem"
+                        hAlign="Begin">
+                        <Text text="HU ID" />
+                    </Column>
+                    <Column
+                        id="colDelivery"
+                        width="12rem"
+                        hAlign="Begin">
+                        <Text text="Delivery" />
+                    </Column>
+                    <Column
+                        id="colStatus"
+                        width="10rem"
+                        hAlign="Begin">
+                        <Text text="Status" />
+                    </Column>
+                    <Column
+                        id="colSeverity"
+                        width="9rem"
+                        hAlign="Begin">
+                        <Text text="Severity" />
+                    </Column>
+                    <Column
+                        id="colWeightDelta"
+                        width="10rem"
+                        hAlign="End">
+                        <Text text="Weight Delta (%)" />
+                    </Column>
+                    <Column
+                        id="colConfidence"
+                        width="10rem"
+                        hAlign="End"
+                        minScreenWidth="Tablet"
+                        demandPopin="true">
+                        <Text text="Confidence" />
+                    </Column>
+                    <Column
+                        id="colAction"
+                        width="7rem"
+                        hAlign="Center"
+                        minScreenWidth="Desktop"
+                        demandPopin="true">
+                        <Text text="" />
+                    </Column>
+                </columns>
+
+                <!-- Row Template -->
+                <items>
+                    <ColumnListItem
+                        id="huListItem"
+                        type="Navigation"
+                        press=".onItemPress"
+                        highlight="{
+                            path: 'status',
+                            formatter: '.formatter.statusHighlight'
+                        }">
+                        <cells>
+                            <!-- HU ID -->
+                            <ObjectIdentifier
+                                title="{huID}"
+                                titleActive="true"
+                                titlePress=".onItemPress" />
+
+                            <!-- Delivery -->
+                            <Text text="{outboundDelivery}" />
+
+                            <!-- Status as ObjectStatus -->
+                            <ObjectStatus
+                                text="{status}"
+                                state="{
+                                    path: 'status',
+                                    formatter: '.formatter.statusState'
+                                }"
+                                icon="{
+                                    path: 'status',
+                                    formatter: '.formatter.statusIcon'
+                                }"
+                                inverted="false" />
+
+                            <!-- Severity -->
+                            <ObjectStatus
+                                text="{severity}"
+                                state="{
+                                    path: 'severity',
+                                    formatter: '.formatter.severityState'
+                                }" />
+
+                            <!-- Weight Delta -->
+                            <ObjectNumber
+                                number="{
+                                    parts: ['expectedWeight','actualWeight'],
+                                    formatter: '.formatter.weightDeltaNumber'
+                                }"
+                                unit="%"
+                                state="{
+                                    parts: ['expectedWeight','actualWeight'],
+                                    formatter: '.formatter.weightDeltaState'
+                                }"
+                                textAlign="End" />
+
+                            <!-- Confidence -->
+                            <ObjectNumber
+                                number="{
+                                    path: 'validationConfidence',
+                                    type: 'sap.ui.model.type.Float',
+                                    formatOptions: { maxFractionDigits: 1, minFractionDigits: 1 }
+                                }"
+                                unit="%"
+                                textAlign="End" />
+
+                            <!-- Quick Detail Button -->
+                            <Button
+                                icon="sap-icon://detail-view"
+                                type="Transparent"
+                                tooltip="View Details"
+                                press=".onItemPress" />
+                        </cells>
+                    </ColumnListItem>
+                </items>
+
+                <!-- No data -->
+                <noData>
+                    <IllustratedMessage
+                        illustrationType="sapIllus-NoData"
+                        title="No Handling Units Found"
+                        description="Try adjusting your search or filter criteria." />
+                </noData>
+            </Table>
+        </content>
+
+    </Page>
+</mvc:View>

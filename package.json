@@ -1,0 +1,34 @@
+{
+  "name": "load-assurance-agent",
+  "version": "1.0.0",
+  "description": "Autonomous Load Assurance Agent for SAP EWM",
+  "engines": {
+    "node": "18.x || 20.x || 22.x || 24.x"
+  },
+  "scripts": {
+    "start": "cds-serve",
+    "watch": "cds watch",
+    "build": "cds build"
+  },
+  "dependencies": {
+    "@sap/cds": "^8",
+    "@sap/xssec": "^3",
+    "@sap-cloud-sdk/http-client": "^3",
+    "@sap-cloud-sdk/connectivity": "^3",
+    "express": "^4"
+  },
+  "devDependencies": {
+    "@sap/cds-dk": "^8"
+  },
+  "cds": {
+    "requires": {
+      "auth": { "kind": "dummy" }
+    },
+    "server": {
+      "static": true,
+      "staticDirs": [
+        "webapp"
+      ]
+    }
+  }
+}

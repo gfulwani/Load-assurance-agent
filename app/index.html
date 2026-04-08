@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Load Assurance Agent — SAP EWM</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --sap-blue:        #0a6ed1;
+    --sap-blue-dark:   #0854a0;
+    --sap-blue-light:  #e8f1fb;
+    --sap-shell:       #354a5e;
+    --sap-shell-dark:  #233044;
+    --sap-white:       #ffffff;
+    --sap-bg:          #f5f6f7;
+    --sap-border:      #d9d9d9;
+    --sap-text:        #32363a;
+    --sap-text-2:      #6a6d70;
+    --sap-green:       #107e3e;
+    --sap-green-bg:    #e8f5e9;
+    --sap-red:         #b00;
+    --sap-red-bg:      #ffeaea;
+    --sap-orange:      #e76500;
+    --sap-orange-bg:   #fff3e0;
+    --sap-critical:    #b00;
+    --sap-high:        #e76500;
+    --sap-medium:      #dfb000;
+    --sap-low:         #107e3e;
+    --panel-left:      280px;
+    --panel-right:     320px;
+    --shell-h:         44px;
+    --kpi-h:           80px;
+    --radius:          6px;
+    --shadow:          0 1px 4px rgba(0,0,0,.12);
+    --shadow-md:       0 2px 10px rgba(0,0,0,.15);
+  }
+  body {
+    font-family: "72", "72full", Arial, Helvetica, sans-serif;
+    font-size: 14px;
+    color: var(--sap-text);
+    background: var(--sap-bg);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Shell Bar ────────────────────────────────────────────── */
+  .shell {
+    height: var(--shell-h);
+    background: var(--sap-shell);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  }
+  .shell-logo {
+    width: 28px; height: 28px;
+    background: var(--sap-blue);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff;
+    letter-spacing: -.5px;
+  }
+  .shell-divider {
+    width: 1px; height: 24px;
+    background: rgba(255,255,255,.2);
+  }
+  .shell-title {
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .01em;
+  }
+  .shell-subtitle {
+    color: rgba(255,255,255,.55);
+    font-size: 12px;
+    margin-left: 2px;
+  }
+  .shell-tag {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .shell-tag.ewm  { background: var(--sap-blue);  color: #fff; }
+  .shell-tag.ai   { background: #6d31a8;           color: #fff; }
+  .shell-spacer   { flex: 1; }
+  .shell-user {
+    width: 30px; height: 30px;
+    background: var(--sap-blue);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 12px; font-weight: 700;
+    cursor: pointer;
+  }
+  .shell-icon-btn {
+    width: 32px; height: 32px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: rgba(255,255,255,.8);
+    font-size: 16px;
+    transition: background .15s;
+  }
+  .shell-icon-btn:hover { background: rgba(255,255,255,.1); }
+
+  /* ── Sub-header / breadcrumb ──────────────────────────────── */
+  .subheader {
+    height: 36px;
+    background: var(--sap-shell-dark);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .breadcrumb { color: rgba(255,255,255,.5); font-size: 12px; cursor: pointer; }
+  .breadcrumb:hover { color: rgba(255,255,255,.85); }
+  .breadcrumb-sep { color: rgba(255,255,255,.3); font-size: 11px; }
+  .breadcrumb.active { color: rgba(255,255,255,.9); font-weight: 600; }
+
+  /* ── KPI Bar ──────────────────────────────────────────────── */
+  .kpi-bar {
+    height: var(--kpi-h);
+    background: #fff;
+    border-bottom: 1px solid var(--sap-border);
+    display: flex;
+    align-items: stretch;
+    padding: 0 16px;
+    gap: 0;
+    flex-shrink: 0;
+    box-shadow: var(--shadow);
+  }
+  .kpi-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 24px;
+    border-right: 1px solid var(--sap-border);
+    min-width: 160px;
+    position: relative;
+    cursor: default;
+    transition: background .15s;
+  }
+  .kpi-item:first-child { padding-left: 8px; }
+  .kpi-item:last-child  { border-right: none; }
+  .kpi-item:hover       { background: var(--sap-blue-light); }
+  .kpi-label {
+    font-size: 11px;
+    color: var(--sap-text-2);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 4px;
+  }
+  .kpi-value {
+    font-size: 26px;
+    font-weight: 300;
+    line-height: 1;
+    color: var(--sap-text);
+  }
+  .kpi-value.blue   { color: var(--sap-blue); }
+  .kpi-value.green  { color: var(--sap-green); }
+  .kpi-value.red    { color: var(--sap-red); }
+  .kpi-value.orange { color: var(--sap-orange); }
+  .kpi-trend {
+    font-size: 11px;
+    color: var(--sap-text-2);
+    margin-top: 3px;
+  }
+  .kpi-bar-spacer { flex: 1; }
+  .kpi-refresh-area {
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 8px;
+    color: var(--sap-text-2);
+    font-size: 12px;
+  }
+  .btn-refresh {
+    padding: 6px 14px;
+    background: var(--sap-blue);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    transition: background .15s;
+  }
+  .btn-refresh:hover { background: var(--sap-blue-dark); }
+
+  /* ── Main Layout ──────────────────────────────────────────── */
+  .workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Left Panel ───────────────────────────────────────────── */
+  .panel-left {
+    width: var(--panel-left);
+    background: #fff;
+    border-right: 1px solid var(--sap-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .panel-left-header {
+    padding: 12px 14px 8px;
+    border-bottom: 1px solid var(--sap-border);
+    background: var(--sap-blue-light);
+  }
+  .panel-left-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--sap-blue);
+    margin-bottom: 8px;
+  }
+  .search-box {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--sap-border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: #fff;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .search-box:focus { border-color: var(--sap-blue); }
+  .filter-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .filter-chip {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all .15s;
+    background: #fff;
+    color: var(--sap-text-2);
+    border-color: var(--sap-border);
+  }
+  .filter-chip.active-all    { background: var(--sap-blue);   color: #fff; border-color: var(--sap-blue); }
+  .filter-chip.active-failed { background: var(--sap-red);    color: #fff; border-color: var(--sap-red); }
+  .filter-chip.active-review { background: var(--sap-orange); color: #fff; border-color: var(--sap-orange); }
+  .filter-chip.active-passed { background: var(--sap-green);  color: #fff; border-color: var(--sap-green); }
+  .hu-list { flex: 1; overflow-y: auto; }
+  .hu-item {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    transition: background .12s;
+    position: relative;
+  }
+  .hu-item:hover    { background: var(--sap-blue-light); }
+  .hu-item.selected { background: #ddeeff; border-left: 3px solid var(--sap-blue); padding-left: 11px; }
+  .hu-item-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 3px;
+  }
+  .hu-id-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--sap-blue);
+  }
+  .status-badge {
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .badge-Passed { background: var(--sap-green-bg); color: var(--sap-green); }
+  .badge-Failed { background: var(--sap-red-bg);   color: var(--sap-red); }
+  .badge-Review { background: var(--sap-orange-bg);color: var(--sap-orange); }
+  .hu-item-sub {
+    font-size: 11px;
+    color: var(--sap-text-2);
+    display: flex;
+    justify-content: space-between;
+  }
+  .severity-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .dot-Critical { background: var(--sap-critical); }
+  .dot-High     { background: var(--sap-high); }
+  .dot-Medium   { background: var(--sap-medium); }
+  .dot-Low      { background: var(--sap-low); }
+
+  /* ── Center Panel ─────────────────────────────────────────── */
+  .panel-center {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--sap-bg);
+  }
+  .center-header {
+    padding: 14px 20px 0;
+    background: #fff;
+    border-bottom: 1px solid var(--sap-border);
+    box-shadow: var(--shadow);
+  }
+  .center-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .hu-headline {
+    font-size: 20px;
+    font-weight: 300;
+    color: var(--sap-text);
+    line-height: 1.2;
+  }
+  .hu-headline span { font-weight: 700; color: var(--sap-blue); }
+  .hu-meta { font-size: 12px; color: var(--sap-text-2); margin-top: 2px; }
+  .action-btns { display: flex; gap: 8px; }
+  .btn {
+    padding: 7px 16px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--sap-border);
+    background: #fff;
+    color: var(--sap-text);
+    transition: all .15s;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .btn:hover { background: var(--sap-bg); border-color: #aaa; }
+  .btn.primary { background: var(--sap-blue); color: #fff; border-color: var(--sap-blue); }
+  .btn.primary:hover { background: var(--sap-blue-dark); }
+  .btn.danger  { background: var(--sap-red); color: #fff; border-color: var(--sap-red); }
+  .btn.danger:hover  { background: #8b0000; }
+
+  /* ── Tabs ─────────────────────────────────────────────────── */
+  .tabs { display: flex; gap: 0; }
+  .tab {
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--sap-text-2);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .tab:hover  { color: var(--sap-blue); }
+  .tab.active { color: var(--sap-blue); border-bottom-color: var(--sap-blue); font-weight: 700; }
+
+  /* ── Center Content ───────────────────────────────────────── */
+  .center-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .card {
+    background: #fff;
+    border-radius: var(--radius);
+    border: 1px solid var(--sap-border);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--sap-border);
+    background: #fafafa;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--sap-text);
+    letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+  .card-body { padding: 16px; }
+
+  /* Weight gauge */
+  .weight-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+  .weight-box {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--sap-border);
+    text-align: center;
+  }
+  .weight-box-label { font-size: 11px; color: var(--sap-text-2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .weight-box-val   { font-size: 22px; font-weight: 300; }
+  .weight-box-unit  { font-size: 11px; color: var(--sap-text-2); margin-left: 3px; }
+  .weight-box.delta.pass { background: var(--sap-green-bg); border-color: var(--sap-green); }
+  .weight-box.delta.fail { background: var(--sap-red-bg);   border-color: var(--sap-red); }
+  .weight-box.delta.warn { background: var(--sap-orange-bg);border-color: var(--sap-orange); }
+
+  /* Confidence bar */
+  .confidence-row {
+    display: flex; align-items: center; gap: 12px;
+    margin-top: 10px;
+  }
+  .confidence-label { font-size: 12px; color: var(--sap-text-2); min-width: 120px; }
+  .confidence-track {
+    flex: 1;
+    height: 8px;
+    background: #e8e8e8;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .confidence-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--sap-blue);
+    transition: width .4s ease;
+  }
+  .confidence-pct { font-size: 12px; font-weight: 700; color: var(--sap-blue); min-width: 36px; text-align: right; }
+
+  /* Field grid */
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 24px;
+  }
+  .field-item {}
+  .field-label { font-size: 11px; color: var(--sap-text-2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+  .field-value { font-size: 14px; color: var(--sap-text); font-weight: 500; }
+  .field-value.mono { font-family: 'Courier New', monospace; color: var(--sap-blue); }
+
+  /* AI Insight box */
+  .ai-insight-box {
+    background: linear-gradient(135deg, #f0f4ff 0%, #faf0ff 100%);
+    border: 1px solid #c5b3e6;
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .ai-insight-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+  }
+  .ai-icon {
+    width: 24px; height: 24px;
+    background: #6d31a8;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 12px; font-weight: 700;
+  }
+  .ai-tag { font-size: 11px; font-weight: 700; color: #6d31a8; text-transform: uppercase; letter-spacing: .06em; }
+  .ai-insight-text { font-size: 13px; color: var(--sap-text); line-height: 1.6; }
+  .ai-insight-text strong { color: #6d31a8; }
+
+  /* Root cause / recommended action */
+  .rc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .rc-box {
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .rc-box.cause  { background: #fff8e1; border: 1px solid #ffe082; }
+  .rc-box.action { background: #e8f5e9; border: 1px solid #a5d6a7; }
+  .rc-box-label  { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 5px; }
+  .rc-box.cause  .rc-box-label  { color: #e65100; }
+  .rc-box.action .rc-box-label  { color: var(--sap-green); }
+
+  /* Checks list */
+  .check-list { display: flex; flex-direction: column; gap: 8px; }
+  .check-row  { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .check-icon { width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .check-icon.ok   { background: var(--sap-green-bg); color: var(--sap-green); }
+  .check-icon.fail { background: var(--sap-red-bg);   color: var(--sap-red); }
+  .check-icon.warn { background: var(--sap-orange-bg);color: var(--sap-orange); }
+  .check-text { flex: 1; }
+  .check-sub  { font-size: 11px; color: var(--sap-text-2); }
+
+  /* Empty / loading states */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: var(--sap-text-2);
+    gap: 10px;
+  }
+  .empty-icon { font-size: 40px; opacity: .3; }
+  .empty-text { font-size: 14px; font-weight: 500; }
+  .empty-sub  { font-size: 12px; }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid #e8e8e8;
+    border-top-color: var(--sap-blue);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Right Panel — AI Copilot ─────────────────────────────── */
+  .panel-right {
+    width: var(--panel-right);
+    background: #fff;
+    border-left: 1px solid var(--sap-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .copilot-header {
+    padding: 12px 14px;
+    background: linear-gradient(135deg, #4a1a78, #6d31a8);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .copilot-avatar {
+    width: 32px; height: 32px;
+    background: rgba(255,255,255,.2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 14px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .copilot-title { color: #fff; font-size: 14px; font-weight: 700; }
+  .copilot-sub   { color: rgba(255,255,255,.6); font-size: 11px; }
+  .copilot-status-dot {
+    width: 8px; height: 8px;
+    background: #4caf50;
+    border-radius: 50%;
+    margin-left: auto;
+    box-shadow: 0 0 5px #4caf50;
+  }
+  .copilot-msgs {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: #fafafa;
+  }
+  .msg { display: flex; flex-direction: column; gap: 3px; max-width: 90%; }
+  .msg.agent { align-self: flex-start; }
+  .msg.user  { align-self: flex-end; }
+  .msg-bubble {
+    padding: 9px 12px;
+    border-radius: 12px;
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .msg.agent .msg-bubble {
+    background: #fff;
+    border: 1px solid var(--sap-border);
+    border-bottom-left-radius: 4px;
+    color: var(--sap-text);
+    box-shadow: var(--shadow);
+  }
+  .msg.user .msg-bubble {
+    background: var(--sap-blue);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+  }
+  .msg-time { font-size: 10px; color: var(--sap-text-2); padding: 0 4px; }
+  .msg.user .msg-time { text-align: right; }
+  .copilot-input-area {
+    padding: 10px;
+    border-top: 1px solid var(--sap-border);
+    display: flex;
+    gap: 6px;
+    background: #fff;
+  }
+  .copilot-input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid var(--sap-border);
+    border-radius: var(--radius);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+    resize: none;
+    height: 36px;
+    font-family: inherit;
+  }
+  .copilot-input:focus { border-color: #6d31a8; }
+  .copilot-send {
+    width: 36px; height: 36px;
+    background: #6d31a8;
+    border: none;
+    border-radius: var(--radius);
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+    flex-shrink: 0;
+  }
+  .copilot-send:hover { background: #4a1a78; }
+  .copilot-suggestions {
+    padding: 4px 10px 8px;
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .suggestion-chip {
+    padding: 3px 9px;
+    border: 1px solid #c5b3e6;
+    border-radius: 10px;
+    font-size: 11px;
+    color: #6d31a8;
+    cursor: pointer;
+    background: #f9f0ff;
+    transition: all .15s;
+  }
+  .suggestion-chip:hover { background: #6d31a8; color: #fff; }
+
+  /* ── Status bar ───────────────────────────────────────────── */
+  .statusbar {
+    height: 22px;
+    background: var(--sap-shell-dark);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .statusbar-item {
+    font-size: 11px;
+    color: rgba(255,255,255,.5);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .statusbar-item .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #4caf50;
+  }
+  .statusbar-item .dot.warn { background: var(--sap-orange); }
+  .statusbar-item .dot.err  { background: var(--sap-red); }
+
+  /* ── Misc ─────────────────────────────────────────────────── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .no-select { user-select: none; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+  .pulse { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.5; } }
+  .tag-validated {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    background: var(--sap-green-bg); color: var(--sap-green);
+    border-radius: 10px; font-size: 11px; font-weight: 700;
+  }
+  .tag-blocked {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    background: var(--sap-red-bg); color: var(--sap-red);
+    border-radius: 10px; font-size: 11px; font-weight: 700;
+  }
+  .tag-review {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    background: var(--sap-orange-bg); color: var(--sap-orange);
+    border-radius: 10px; font-size: 11px; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ Shell Bar ══════════════════════════════════════════════ -->
+<div class="shell no-select">
+  <div class="shell-logo">SAP</div>
+  <div class="shell-divider"></div>
+  <div>
+    <div class="shell-title">Load Assurance Agent</div>
+    <div class="shell-subtitle" style="font-size:11px;">Extended Warehouse Management</div>
+  </div>
+  <span class="shell-tag ewm">EWM</span>
+  <span class="shell-tag ai">AI Agent</span>
+  <div class="shell-spacer"></div>
+  <div class="shell-icon-btn" title="Notifications">🔔</div>
+  <div class="shell-icon-btn" title="Settings">⚙</div>
+  <div class="shell-icon-btn" title="Help">?</div>
+  <div class="shell-divider"></div>
+  <div class="shell-user" title="John Doe — WM Supervisor">JD</div>
+</div>
+
+<!-- ══ Sub-header ═════════════════════════════════════════════ -->
+<div class="subheader no-select">
+  <span class="breadcrumb">EWM</span>
+  <span class="breadcrumb-sep">›</span>
+  <span class="breadcrumb">Outbound Processing</span>
+  <span class="breadcrumb-sep">›</span>
+  <span class="breadcrumb active">Load Assurance Agent</span>
+</div>
+
+<!-- ══ KPI Bar ════════════════════════════════════════════════ -->
+<div class="kpi-bar no-select">
+  <div class="kpi-item">
+    <div class="kpi-label">Avg. AI Confidence</div>
+    <div class="kpi-value blue" id="kpi-confidence">—</div>
+    <div class="kpi-trend">Validation model accuracy</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-label">Pallets Staged</div>
+    <div class="kpi-value" id="kpi-total">—</div>
+    <div class="kpi-trend">Active handling units</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-label">Blocked / Risk</div>
+    <div class="kpi-value red" id="kpi-failed">—</div>
+    <div class="kpi-trend">Require intervention</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-label">Pallets Passed</div>
+    <div class="kpi-value green" id="kpi-passed">—</div>
+    <div class="kpi-trend">Cleared for dispatch</div>
+  </div>
+  <div class="kpi-item">
+    <div class="kpi-label">Pending Review</div>
+    <div class="kpi-value orange" id="kpi-review">—</div>
+    <div class="kpi-trend">Awaiting manual check</div>
+  </div>
+  <div class="kpi-bar-spacer"></div>
+  <div class="kpi-refresh-area">
+    <span id="last-refresh" style="font-size:11px;"></span>
+    <label for="warehouse-input" style="font-size:12px;color:var(--sap-text-2);font-weight:600;">Warehouse</label>
+    <input id="warehouse-input" type="text" value="2002" placeholder="e.g. 2002"
+      style="width:72px;padding:6px 8px;border:1px solid var(--sap-border);border-radius:var(--radius);font-size:13px;outline:none;transition:border-color .15s;"
+      onfocus="this.style.borderColor='var(--sap-blue)'" onblur="this.style.borderColor='var(--sap-border)'"
+      onkeydown="if(event.key==='Enter')refreshData()" />
+    <button class="btn-refresh" onclick="refreshData()">↻ Refresh</button>
+  </div>
+</div>
+
+<!-- ══ Workspace ══════════════════════════════════════════════ -->
+<div class="workspace">
+
+  <!-- ── Left Panel ─────────────────────────────────────────── -->
+  <div class="panel-left">
+    <div class="panel-left-header no-select">
+      <div class="panel-left-title">HU Worklist</div>
+      <input class="search-box" id="search-input" type="text" placeholder="Search HU or delivery…" oninput="filterList()" />
+      <div class="filter-row">
+        <span class="filter-chip active-all" data-filter="All" onclick="setFilter('All')">All</span>
+        <span class="filter-chip" data-filter="Failed" onclick="setFilter('Failed')">Failed</span>
+        <span class="filter-chip" data-filter="Review" onclick="setFilter('Review')">Review</span>
+        <span class="filter-chip" data-filter="Passed" onclick="setFilter('Passed')">Passed</span>
+      </div>
+    </div>
+    <div class="hu-list" id="hu-list">
+      <div class="empty-state"><div class="spinner"></div><div class="empty-text pulse">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ── Center Panel ───────────────────────────────────────── -->
+  <div class="panel-center">
+    <div class="center-header no-select" id="center-header">
+      <div class="center-header-top">
+        <div>
+          <div class="hu-headline" id="hu-headline">Select a Handling Unit</div>
+          <div class="hu-meta" id="hu-meta">Choose an HU from the worklist to view details and AI analysis</div>
+        </div>
+        <div class="action-btns" id="action-btns" style="display:none;">
+          <button class="btn" onclick="runValidate()">⚡ Re-Validate</button>
+          <button class="btn primary" id="btn-approve" onclick="approveHU()">✓ Approve</button>
+          <button class="btn danger" id="btn-block" onclick="blockHU()">⛔ Block</button>
+        </div>
+      </div>
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="overview" onclick="switchTab('overview')">Overview</div>
+        <div class="tab" data-tab="validation" onclick="switchTab('validation')">Validation Checks</div>
+        <div class="tab" data-tab="ai" onclick="switchTab('ai')">AI Analysis</div>
+        <div class="tab" data-tab="history" onclick="switchTab('history')">History</div>
+      </div>
+    </div>
+
+    <div class="center-content" id="center-content">
+      <div class="empty-state">
+        <div class="empty-icon">📦</div>
+        <div class="empty-text">No Handling Unit Selected</div>
+        <div class="empty-sub">Select an HU from the worklist on the left</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right Panel — Copilot ──────────────────────────────── -->
+  <div class="panel-right">
+    <div class="copilot-header no-select">
+      <div class="copilot-avatar">AI</div>
+      <div>
+        <div class="copilot-title">Load Assurance Copilot</div>
+        <div class="copilot-sub">Powered by SAP AI Core</div>
+      </div>
+      <div class="copilot-status-dot" title="Online"></div>
+    </div>
+    <div class="copilot-msgs" id="copilot-msgs">
+      <div class="msg agent">
+        <div class="msg-bubble">
+          Hello! I'm your <strong>Load Assurance AI Copilot</strong>. I monitor all handling units in real-time and can help you:<br><br>
+          • Analyze weight deviations<br>
+          • Explain validation failures<br>
+          • Recommend corrective actions<br>
+          • Predict dispatch risks<br><br>
+          Select any HU from the worklist to begin analysis.
+        </div>
+        <div class="msg-time">AI Copilot · Now</div>
+      </div>
+    </div>
+    <div class="copilot-suggestions" id="copilot-suggestions">
+      <span class="suggestion-chip" onclick="sendSuggestion('Why did this HU fail?')">Why did this HU fail?</span>
+      <span class="suggestion-chip" onclick="sendSuggestion('Show all critical issues')">Show critical issues</span>
+      <span class="suggestion-chip" onclick="sendSuggestion('What is the weight threshold?')">Weight threshold?</span>
+    </div>
+    <div class="copilot-input-area">
+      <input class="copilot-input" id="copilot-input" type="text" placeholder="Ask the AI Copilot…" onkeydown="if(event.key==='Enter')sendChat()" />
+      <button class="copilot-send" onclick="sendChat()" title="Send">➤</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ Status Bar ═════════════════════════════════════════════ -->
+<div class="statusbar no-select">
+  <div class="statusbar-item"><div class="dot"></div> Connected · http://localhost:4006</div>
+  <div class="statusbar-item" id="sb-model">Model: LoadAssuranceService</div>
+  <div class="statusbar-item" id="sb-count">Loading…</div>
+  <div style="flex:1;"></div>
+  <div class="statusbar-item">SAP EWM · Warehouse WH01</div>
+  <div class="statusbar-item">John Doe</div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  State
+// ════════════════════════════════════════════════════════════
+let allHUs = [];
+let allVRs = [];
+let selectedHU = null;
+let activeFilter = 'All';
+let activeTab = 'overview';
+
+const BASE = window.location.origin + '/load-assurance';
+
+// ════════════════════════════════════════════════════════════
+//  Bootstrap
+// ════════════════════════════════════════════════════════════
+window.onload = () => {
+  loadData();
+  setInterval(loadData, 30000);
+};
+
+async function loadData() {
+  try {
+    const warehouse = document.getElementById('warehouse-input')?.value?.trim() || '';
+    const whParam = warehouse ? `&warehouse=${encodeURIComponent(warehouse)}` : '';
+    const [huRes, vrRes] = await Promise.all([
+      fetch(`${BASE}/HandlingUnits?$orderby=status desc${whParam}`),
+      fetch(`${BASE}/ValidationResults`)
+    ]);
+    if (!huRes.ok || !vrRes.ok) throw new Error('HTTP error');
+    const huData = await huRes.json();
+    const vrData = await vrRes.json();
+    allHUs = huData.value || [];
+    allVRs = vrData.value || [];
+    renderKPIs();
+    renderList();
+    if (selectedHU) {
+      const updated = allHUs.find(h => h.ID === selectedHU.ID);
+      if (updated) selectHU(updated);
+    }
+    document.getElementById('last-refresh').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('sb-count').textContent =
+      `${allHUs.length} HUs loaded`;
+  } catch (e) {
+    document.getElementById('hu-list').innerHTML =
+      `<div class="empty-state">
+        <div class="empty-icon">⚠</div>
+        <div class="empty-text">Cannot reach CAP service</div>
+        <div class="empty-sub">Make sure <code>cds watch</code> is running on port 4006</div>
+      </div>`;
+    document.getElementById('sb-count').textContent = 'Offline';
+  }
+}
+
+function refreshData() {
+  document.getElementById('last-refresh').textContent = 'Refreshing…';
+  loadData();
+}
+
+// ════════════════════════════════════════════════════════════
+//  KPIs
+// ════════════════════════════════════════════════════════════
+function renderKPIs() {
+  const total   = allHUs.length;
+  const passed  = allHUs.filter(h => h.status === 'Passed').length;
+  const failed  = allHUs.filter(h => h.status === 'Failed').length;
+  const review  = allHUs.filter(h => h.status === 'Review').length;
+  const avgConf = total
+    ? (allHUs.reduce((s,h) => s + (h.validationConfidence||0), 0) / total).toFixed(1)
+    : '—';
+  document.getElementById('kpi-confidence').textContent = avgConf + '%';
+  document.getElementById('kpi-total').textContent      = total;
+  document.getElementById('kpi-failed').textContent     = failed;
+  document.getElementById('kpi-passed').textContent     = passed;
+  document.getElementById('kpi-review').textContent     = review;
+}
+
+// ════════════════════════════════════════════════════════════
+//  HU List
+// ════════════════════════════════════════════════════════════
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-chip').forEach(c => {
+    c.className = 'filter-chip';
+    if (c.dataset.filter === f) c.classList.add('active-' + f.toLowerCase());
+  });
+  renderList();
+}
+
+function filterList() {
+  renderList();
+}
+
+function renderList() {
+  const q = (document.getElementById('search-input').value || '').toLowerCase();
+  const items = allHUs.filter(h => {
+    const matchFilter = activeFilter === 'All' || h.status === activeFilter;
+    const matchSearch = !q ||
+      (h.huID||'').toLowerCase().includes(q) ||
+      (h.outboundDelivery||'').toLowerCase().includes(q);
+    return matchFilter && matchSearch;
+  });
+
+  if (!items.length) {
+    document.getElementById('hu-list').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">No results</div></div>`;
+    return;
+  }
+
+  document.getElementById('hu-list').innerHTML = items.map(h => `
+    <div class="hu-item ${selectedHU && selectedHU.ID===h.ID ? 'selected' : ''}"
+         onclick="selectHU(${JSON.stringify(h).replace(/"/g,'&quot;')})">
+      <div class="hu-item-top">
+        <span class="hu-id-text">${h.huID}</span>
+        <span class="status-badge badge-${h.status}">${h.status}</span>
+      </div>
+      <div class="hu-item-sub">
+        <span><span class="severity-dot dot-${h.severity}"></span>${h.severity || 'Low'}</span>
+        <span>${h.outboundDelivery}</span>
+      </div>
+      <div class="hu-item-sub" style="margin-top:2px;">
+        <span style="color:#aaa;">${(h.validationConfidence||0).toFixed(1)}% conf.</span>
+        <span style="color:#aaa;">${weightDeltaPct(h)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function weightDeltaPct(h) {
+  if (!h.expectedWeight || !h.actualWeight) return '';
+  const d = ((h.actualWeight - h.expectedWeight) / h.expectedWeight * 100);
+  const sign = d >= 0 ? '+' : '';
+  return sign + d.toFixed(1) + '%';
+}
+
+// ════════════════════════════════════════════════════════════
+//  Select HU
+// ════════════════════════════════════════════════════════════
+function selectHU(hu) {
+  selectedHU = hu;
+  renderList(); // refresh selection highlight
+
+  document.getElementById('hu-headline').innerHTML =
+    `Handling Unit <span>${hu.huID}</span>`;
+  document.getElementById('hu-meta').innerHTML =
+    `Outbound Delivery: <strong>${hu.outboundDelivery}</strong>&nbsp;&nbsp;|&nbsp;&nbsp;` +
+    statusTag(hu.status) + `&nbsp;&nbsp;` + severityBadge(hu.severity);
+  document.getElementById('action-btns').style.display = 'flex';
+
+  switchTab(activeTab);
+  renderCenterContent();
+
+  // Push a copilot message
+  const vr = allVRs.find(v => v.hu_ID === hu.ID);
+  addCopilotMsg(buildCopilotAnalysis(hu, vr));
+}
+
+function statusTag(s) {
+  const cls = { Passed:'validated', Failed:'blocked', Review:'review' }[s] || 'review';
+  const icon = { Passed:'✓', Failed:'✕', Review:'⚠' }[s] || '?';
+  return `<span class="tag-${cls}">${icon} ${s}</span>`;
+}
+function severityBadge(s) {
+  const color = { Critical:'var(--sap-critical)', High:'var(--sap-high)', Medium:'var(--sap-medium)', Low:'var(--sap-low)' }[s] || '#888';
+  return `<span style="font-size:12px;font-weight:700;color:${color};">● ${s||'Low'} Severity</span>`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  Tabs
+// ════════════════════════════════════════════════════════════
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+  });
+  if (selectedHU) renderCenterContent();
+}
+
+// ════════════════════════════════════════════════════════════
+//  Center Content Render
+// ════════════════════════════════════════════════════════════
+function renderCenterContent() {
+  const hu = selectedHU;
+  const vr = allVRs.find(v => v.hu_ID === hu.ID);
+  const content = document.getElementById('center-content');
+
+  if (activeTab === 'overview') {
+    content.innerHTML = renderOverview(hu, vr);
+  } else if (activeTab === 'validation') {
+    content.innerHTML = renderValidation(hu, vr);
+  } else if (activeTab === 'ai') {
+    content.innerHTML = renderAITab(hu, vr);
+  } else if (activeTab === 'history') {
+    content.innerHTML = renderHistory(hu);
+  }
+}
+
+function renderOverview(hu, vr) {
+  const delta = hu.actualWeight && hu.expectedWeight
+    ? (hu.actualWeight - hu.expectedWeight) : null;
+  const deltaPct = delta !== null
+    ? (delta / hu.expectedWeight * 100) : null;
+  const deltaClass = deltaPct === null ? '' :
+    Math.abs(deltaPct) > 5 ? 'fail' : Math.abs(deltaPct) > 2 ? 'warn' : 'pass';
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Weight Analysis</span>
+        ${deltaPct !== null ? `<span style="font-size:12px;color:var(--sap-text-2);">Threshold: ±5%</span>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="weight-section">
+          <div class="weight-box">
+            <div class="weight-box-label">Expected Weight</div>
+            <div class="weight-box-val">${hu.expectedWeight?.toFixed(3) ?? '—'}<span class="weight-box-unit">kg</span></div>
+          </div>
+          <div class="weight-box">
+            <div class="weight-box-label">Actual Weight</div>
+            <div class="weight-box-val">${hu.actualWeight?.toFixed(3) ?? '—'}<span class="weight-box-unit">kg</span></div>
+          </div>
+          <div class="weight-box delta ${deltaClass}">
+            <div class="weight-box-label">Weight Delta</div>
+            <div class="weight-box-val">${delta !== null ? (delta >= 0 ? '+' : '') + delta.toFixed(3) : '—'}<span class="weight-box-unit">kg</span></div>
+          </div>
+        </div>
+        ${deltaPct !== null ? `
+        <div class="confidence-row" style="margin-top:14px;">
+          <span class="confidence-label">Deviation</span>
+          <div class="confidence-track">
+            <div class="confidence-fill" style="width:${Math.min(Math.abs(deltaPct)*10,100)}%;background:${Math.abs(deltaPct)>5?'var(--sap-red)':Math.abs(deltaPct)>2?'var(--sap-orange)':'var(--sap-green)'}"></div>
+          </div>
+          <span class="confidence-pct" style="color:${Math.abs(deltaPct)>5?'var(--sap-red)':'var(--sap-green)'}">${(deltaPct>=0?'+':'')+deltaPct.toFixed(2)}%</span>
+        </div>` : ''}
+        <div class="confidence-row">
+          <span class="confidence-label">AI Confidence</span>
+          <div class="confidence-track">
+            <div class="confidence-fill" style="width:${hu.validationConfidence||0}%"></div>
+          </div>
+          <span class="confidence-pct">${(hu.validationConfidence||0).toFixed(1)}%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">HU Details</span></div>
+      <div class="card-body">
+        <div class="field-grid">
+          <div class="field-item">
+            <div class="field-label">Handling Unit ID</div>
+            <div class="field-value mono">${hu.huID}</div>
+          </div>
+          <div class="field-item">
+            <div class="field-label">Outbound Delivery</div>
+            <div class="field-value mono">${hu.outboundDelivery}</div>
+          </div>
+          <div class="field-item">
+            <div class="field-label">Validation Status</div>
+            <div class="field-value">${statusTag(hu.status)}</div>
+          </div>
+          <div class="field-item">
+            <div class="field-label">Severity Level</div>
+            <div class="field-value">${severityBadge(hu.severity)}</div>
+          </div>
+          ${vr ? `
+          <div class="field-item">
+            <div class="field-label">Label Status</div>
+            <div class="field-value">${labelTag(vr.labelStatus)}</div>
+          </div>
+          <div class="field-item">
+            <div class="field-label">Stacking Compliance</div>
+            <div class="field-value">${vr.stackingCompliance
+              ? '<span style="color:var(--sap-green);font-weight:700;">✓ Compliant</span>'
+              : '<span style="color:var(--sap-red);font-weight:700;">✕ Non-Compliant</span>'}</div>
+          </div>` : ''}
+        </div>
+        ${hu.issueDescription ? `
+        <div style="margin-top:14px;padding:10px 14px;background:#fff8f8;border:1px solid #f5c6c6;border-radius:6px;font-size:13px;color:var(--sap-text);line-height:1.5;">
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--sap-red);display:block;margin-bottom:4px;">Issue Description</span>
+          ${hu.issueDescription}
+        </div>` : ''}
+      </div>
+    </div>
+
+    ${vr && vr.aiInsight ? `
+    <div class="ai-insight-box">
+      <div class="ai-insight-header">
+        <div class="ai-icon">AI</div>
+        <span class="ai-tag">AI Insight</span>
+        <span style="font-size:11px;color:#9c6ed6;margin-left:auto;">SAP AI Core · Load Model v2.1</span>
+      </div>
+      <div class="ai-insight-text">${vr.aiInsight}</div>
+    </div>` : ''}
+  `;
+}
+
+function renderValidation(hu, vr) {
+  if (!vr) return `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">No validation result</div></div>`;
+
+  const delta = hu.actualWeight && hu.expectedWeight
+    ? (hu.actualWeight - hu.expectedWeight) : 0;
+  const deltaPct = Math.abs(delta / (hu.expectedWeight||1) * 100);
+  const weightPass = deltaPct <= 5;
+
+  return `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Compliance Checks</span>
+        <span style="font-size:12px;color:var(--sap-text-2);">EWM Validation Suite · ${new Date().toLocaleDateString()}</span>
+      </div>
+      <div class="card-body">
+        <div class="check-list">
+          ${checkRow(weightPass ? 'ok' : 'fail',
+            'Weight Compliance',
+            `Delta: ${(delta>=0?'+':'')+delta.toFixed(3)} kg (${(delta/hu.expectedWeight*100).toFixed(2)}%) — Threshold ±5%`,
+            weightPass ? 'Within acceptable range' : 'Exceeds threshold — dispatch blocked')}
+          ${checkRow(vr.labelStatus==='OK' ? 'ok' : vr.labelStatus==='Damaged' ? 'warn' : 'fail',
+            'Label Integrity',
+            `Status: ${vr.labelStatus}`,
+            vr.labelStatus==='OK' ? 'All labels scanned and verified' : vr.labelStatus==='Damaged' ? 'Label damaged — manual re-scan required' : 'Label missing — cannot dispatch')}
+          ${checkRow(vr.stackingCompliance ? 'ok' : 'fail',
+            'Stacking Compliance',
+            vr.stackingCompliance ? 'Stacking configuration approved' : 'Stacking pattern violates EWM rules',
+            vr.stackingCompliance ? 'Load distribution within limits' : 'Top-heavy arrangement detected — re-stack required')}
+          ${checkRow('ok', 'Hazmat Screening', 'No hazardous material flags', 'MSDS cross-reference passed')}
+          ${checkRow('ok', 'Carrier Compatibility', 'Vehicle type: 40t truck', 'Dimensions within carrier spec')}
+          ${checkRow(hu.status==='Failed' ? 'fail' : hu.status==='Review' ? 'warn' : 'ok',
+            'Final Dispatch Gate',
+            hu.status === 'Failed' ? 'BLOCKED — critical issues unresolved' : hu.status === 'Review' ? 'PENDING — awaiting manual sign-off' : 'CLEARED — all checks passed',
+            '')}
+        </div>
+      </div>
+    </div>
+
+    <div class="rc-row">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Root Cause</span></div>
+        <div class="card-body">
+          <div class="rc-box cause">
+            <div class="rc-box-label">AI-Identified Root Cause</div>
+            ${vr.rootCause || '<span style="color:#aaa;">No root cause identified — HU passed all checks.</span>'}
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Recommended Action</span></div>
+        <div class="card-body">
+          <div class="rc-box action">
+            <div class="rc-box-label">AI Recommendation</div>
+            ${vr.recommendedAction || 'No action required.'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function checkRow(type, label, desc, sub) {
+  const icons = { ok: '✓', fail: '✕', warn: '!' };
+  return `
+    <div class="check-row">
+      <div class="check-icon ${type}">${icons[type]}</div>
+      <div class="check-text">
+        <div style="font-weight:600;">${label}</div>
+        <div class="check-sub">${desc}${sub ? ' · ' + sub : ''}</div>
+      </div>
+    </div>`;
+}
+
+function renderAITab(hu, vr) {
+  return `
+    <div class="ai-insight-box" style="margin-bottom:0;">
+      <div class="ai-insight-header">
+        <div class="ai-icon">AI</div>
+        <span class="ai-tag">Full AI Analysis Report</span>
+        <span style="font-size:11px;color:#9c6ed6;margin-left:auto;">Generated ${new Date().toLocaleTimeString()}</span>
+      </div>
+      <div class="ai-insight-text" style="margin-top:8px;">
+        ${vr?.aiInsight || 'No AI analysis available for this handling unit.'}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Confidence Breakdown</span></div>
+      <div class="card-body">
+        ${confidenceRow('Weight Model', 92.0, hu.status==='Failed'&&Math.abs(hu.actualWeight-hu.expectedWeight)/hu.expectedWeight>0.05)}
+        ${confidenceRow('Label Recognition', vr?.labelStatus==='OK' ? 98.5 : 74.0, vr?.labelStatus!=='OK')}
+        ${confidenceRow('Stacking Analysis', vr?.stackingCompliance ? 97.3 : 88.2, !vr?.stackingCompliance)}
+        ${confidenceRow('Overall Validation', hu.validationConfidence || 0, hu.status==='Failed')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span class="card-title">Predictive Risk Score</span></div>
+      <div class="card-body">
+        <div style="font-size:13px;color:var(--sap-text-2);margin-bottom:12px;">Based on historical patterns across 4,820 similar shipments in WH01</div>
+        ${riskRow('Transit Damage Risk',   hu.status==='Failed' ? 72 : hu.status==='Review' ? 38 : 8)}
+        ${riskRow('Customer Complaint Risk', hu.severity==='Critical' ? 85 : hu.severity==='High' ? 45 : 12)}
+        ${riskRow('Regulatory Non-Compliance', vr?.labelStatus!=='OK' ? 60 : 5)}
+        ${riskRow('Re-work Cost Exposure',  hu.status==='Failed' ? 65 : 10)}
+      </div>
+    </div>
+  `;
+}
+
+function confidenceRow(label, pct, warn) {
+  const color = warn ? 'var(--sap-orange)' : 'var(--sap-blue)';
+  return `
+    <div class="confidence-row" style="margin-bottom:6px;">
+      <span class="confidence-label">${label}</span>
+      <div class="confidence-track">
+        <div class="confidence-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+      <span class="confidence-pct" style="color:${color}">${pct.toFixed(1)}%</span>
+    </div>`;
+}
+
+function riskRow(label, risk) {
+  const color = risk > 60 ? 'var(--sap-red)' : risk > 30 ? 'var(--sap-orange)' : 'var(--sap-green)';
+  return `
+    <div class="confidence-row" style="margin-bottom:6px;">
+      <span class="confidence-label">${label}</span>
+      <div class="confidence-track">
+        <div class="confidence-fill" style="width:${risk}%;background:${color}"></div>
+      </div>
+      <span class="confidence-pct" style="color:${color}">${risk}%</span>
+    </div>`;
+}
+
+function renderHistory(hu) {
+  const events = [
+    { time: '08:42:11', actor: 'AI Agent', event: 'Validation scan initiated', type: 'info' },
+    { time: '08:42:13', actor: 'AI Agent', event: 'Weight check completed — result: ' + hu.status, type: hu.status==='Passed' ? 'ok' : 'fail' },
+    { time: '08:42:14', actor: 'AI Agent', event: 'Label scan completed — status: ' + (allVRs.find(v=>v.hu_ID===hu.ID)?.labelStatus || 'N/A'), type: 'info' },
+    { time: '08:42:15', actor: 'AI Agent', event: 'Stacking compliance check done', type: 'info' },
+    { time: '08:42:16', actor: 'AI Agent', event: 'AI model inference complete — confidence: ' + (hu.validationConfidence||0).toFixed(1) + '%', type: 'info' },
+    { time: '08:42:17', actor: 'System',   event: 'Validation result persisted to EWM', type: 'ok' },
+  ];
+  if (hu.status === 'Failed') {
+    events.push({ time: '08:42:18', actor: 'System', event: 'Dispatch gate BLOCKED — supervisor notification sent', type: 'fail' });
+  } else if (hu.status === 'Review') {
+    events.push({ time: '08:42:18', actor: 'System', event: 'Manual review flag set — awaiting WM supervisor', type: 'warn' });
+  }
+
+  return `
+    <div class="card">
+      <div class="card-header"><span class="card-title">Audit Trail</span>
+        <span style="font-size:12px;color:var(--sap-text-2);">Today · ${new Date().toLocaleDateString()}</span>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;flex-direction:column;gap:0;position:relative;">
+          <div style="position:absolute;left:11px;top:0;bottom:0;width:1px;background:#e8e8e8;"></div>
+          ${events.map(e => `
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;position:relative;">
+            <div style="width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;
+              background:${{ok:'var(--sap-green-bg)',fail:'var(--sap-red-bg)',warn:'var(--sap-orange-bg)',info:'var(--sap-blue-light)'}[e.type]};
+              color:${{ok:'var(--sap-green)',fail:'var(--sap-red)',warn:'var(--sap-orange)',info:'var(--sap-blue)'}[e.type]};
+              border:1px solid ${{ok:'var(--sap-green)',fail:'var(--sap-red)',warn:'var(--sap-orange)',info:'var(--sap-border)'}[e.type]};
+              z-index:1;">
+              ${{ok:'✓',fail:'✕',warn:'!',info:'i'}[e.type]}
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:13px;color:var(--sap-text);">${e.event}</div>
+              <div style="font-size:11px;color:var(--sap-text-2);">${e.time} · ${e.actor}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+function labelTag(s) {
+  if (s === 'OK')      return '<span style="color:var(--sap-green);font-weight:700;">✓ OK</span>';
+  if (s === 'Damaged') return '<span style="color:var(--sap-orange);font-weight:700;">⚠ Damaged</span>';
+  if (s === 'Missing') return '<span style="color:var(--sap-red);font-weight:700;">✕ Missing</span>';
+  return s || '—';
+}
+
+// ════════════════════════════════════════════════════════════
+//  Actions
+// ════════════════════════════════════════════════════════════
+async function runValidate() {
+  if (!selectedHU) return;
+  addCopilotMsg(`⚡ Re-validating <strong>${selectedHU.huID}</strong>…`, true);
+  try {
+    const res = await fetch(`${BASE}/validateHU`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ huID: selectedHU.huID })
+    });
+    const data = await res.json();
+    await loadData();
+    const msg = data.value
+      ? `Validation complete for <strong>${selectedHU.huID}</strong>:<br><br>` +
+        `Status: <strong>${data.value.status}</strong><br>` +
+        `Weight Delta: <strong>${data.value.weightDelta} kg</strong><br>` +
+        `Result: ${data.value.message}`
+      : `Validation complete. Check the overview for updated results.`;
+    addCopilotMsg(msg);
+  } catch {
+    addCopilotMsg('Could not reach the validation service. Is <code>cds watch</code> running?');
+  }
+}
+
+function approveHU() {
+  if (!selectedHU) return;
+  addCopilotMsg(`✅ <strong>${selectedHU.huID}</strong> has been manually approved for dispatch by John Doe. EWM transfer order will be created.`);
+}
+
+function blockHU() {
+  if (!selectedHU) return;
+  addCopilotMsg(`⛔ <strong>${selectedHU.huID}</strong> has been manually blocked. A rework task has been created in EWM. Supervisor notified via SAP Workflow.`);
+}
+
+// ════════════════════════════════════════════════════════════
+//  Copilot
+// ════════════════════════════════════════════════════════════
+function buildCopilotAnalysis(hu, vr) {
+  const delta = hu.actualWeight && hu.expectedWeight
+    ? (hu.actualWeight - hu.expectedWeight) : 0;
+  const pct = (delta / (hu.expectedWeight||1) * 100);
+  let msg = `📦 <strong>${hu.huID}</strong> selected.<br><br>`;
+  if (hu.status === 'Passed') {
+    msg += `✅ <strong>All checks passed.</strong> Weight delta: ${(pct>=0?'+':'')+pct.toFixed(2)}% — within ±5% threshold.<br>This HU is cleared for dispatch.`;
+  } else if (hu.status === 'Failed') {
+    msg += `🚨 <strong>BLOCKED</strong> — ${hu.severity} severity issue detected.<br><br>`;
+    if (vr?.rootCause) msg += `Root cause: ${vr.rootCause}<br><br>`;
+    if (vr?.recommendedAction) msg += `Recommended action: <strong>${vr.recommendedAction}</strong>`;
+  } else {
+    msg += `⚠️ <strong>Manual review required.</strong><br><br>`;
+    if (vr?.aiInsight) msg += vr.aiInsight;
+  }
+  return msg;
+}
+
+function addCopilotMsg(html, isUser = false, id = null) {
+  const msgs = document.getElementById('copilot-msgs');
+  const div = document.createElement('div');
+  div.className = `msg ${isUser ? 'user' : 'agent'}`;
+  if (id) div.id = id;
+  div.innerHTML = `<div class="msg-bubble">${html}</div>
+    <div class="msg-time">${isUser ? 'You' : 'AI Copilot'} · ${new Date().toLocaleTimeString()}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function sendChat() {
+  const input = document.getElementById('copilot-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addCopilotMsg(text, true);
+
+  // Show typing indicator
+  const typingId = 'typing-' + Date.now();
+  addCopilotMsg('<span class="pulse">AI is thinking…</span>', false, typingId);
+
+  const huContext = selectedHU
+    ? `Selected HU: ${selectedHU.huID}, Status: ${selectedHU.status}, Delivery: ${selectedHU.outboundDelivery}`
+    : 'No HU selected';
+
+  try {
+    const res = await fetch(`${BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, huContext })
+    });
+    const data = await res.json();
+    document.getElementById(typingId)?.remove();
+    const reply = data.value?.reply || data.reply || generateCopilotFallback(text);
+    const badge = data.value?.aiPowered ? ' <span style="font-size:10px;background:#6d31a8;color:#fff;padding:1px 6px;border-radius:8px;vertical-align:middle;">AI</span>' : '';
+    addCopilotMsg(reply + badge);
+  } catch {
+    document.getElementById(typingId)?.remove();
+    addCopilotMsg(generateCopilotFallback(text));
+  }
+}
+
+async function sendSuggestion(text) {
+  addCopilotMsg(text, true);
+  const typingId = 'typing-' + Date.now();
+  addCopilotMsg('<span class="pulse">AI is thinking…</span>', false, typingId);
+  const huContext = selectedHU ? `HU: ${selectedHU.huID}, Status: ${selectedHU.status}` : 'No HU selected';
+  try {
+    const res = await fetch(`${BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, huContext })
+    });
+    const data = await res.json();
+    document.getElementById(typingId)?.remove();
+    const reply = data.value?.reply || data.reply || generateCopilotFallback(text);
+    const badge = data.value?.aiPowered ? ' <span style="font-size:10px;background:#6d31a8;color:#fff;padding:1px 6px;border-radius:8px;vertical-align:middle;">AI</span>' : '';
+    addCopilotMsg(reply + badge);
+  } catch {
+    document.getElementById(typingId)?.remove();
+    addCopilotMsg(generateCopilotFallback(text));
+  }
+}
+
+function generateCopilotFallback(q) {
+  const ql = q.toLowerCase();
+  if (ql.includes('fail') || ql.includes('why')) {
+    const hu = selectedHU;
+    if (!hu) return 'Please select a Handling Unit first to see failure details.';
+    const vr = allVRs.find(v => v.hu_ID === hu.ID);
+    return hu.status === 'Failed'
+      ? `<strong>${hu.huID}</strong> failed because: ${vr?.rootCause || hu.issueDescription || 'weight deviation exceeds 5% threshold.'}`
+      : `<strong>${hu.huID}</strong> has status <em>${hu.status}</em>. ${vr?.aiInsight || 'No critical issues detected.'}`;
+  }
+  if (ql.includes('threshold') || ql.includes('weight')) {
+    return 'The weight validation threshold is <strong>±5%</strong> of the expected weight. Deviations between 2–5% are flagged as medium/high severity for review. Above 5% triggers an automatic block.';
+  }
+  if (ql.includes('critical') || ql.includes('all')) {
+    const failed = allHUs.filter(h => h.status === 'Failed');
+    if (!failed.length) return 'No critical failures detected in the current worklist. All HUs are either passed or pending review.';
+    return `Current critical failures:<br>${failed.map(h => `• <strong>${h.huID}</strong> — ${h.issueDescription||h.severity+' severity'}`).join('<br>')}`;
+  }
+  if (ql.includes('stacking')) {
+    return 'Stacking compliance checks verify that heavy items are placed on lower layers per EWM stacking rules. Non-compliance is flagged when the center of gravity exceeds safe transport limits.';
+  }
+  if (ql.includes('approve') || ql.includes('dispatch')) {
+    const passed = allHUs.filter(h => h.status === 'Passed').length;
+    return `${passed} HU(s) are currently cleared for dispatch. Use the <strong>Approve</strong> button on each passed HU to trigger EWM transfer order creation.`;
+  }
+  if (ql.includes('confidence')) {
+    const avg = allHUs.length
+      ? (allHUs.reduce((s,h) => s + (h.validationConfidence||0), 0) / allHUs.length).toFixed(1)
+      : '—';
+    return `Average AI validation confidence across all HUs is <strong>${avg}%</strong>. The model uses weight sensor data, label scan results, and stacking telemetry as inputs.`;
+  }
+  return `I understand you're asking about "<em>${q}</em>". For detailed analysis, please select a specific Handling Unit from the worklist. I can then provide root cause analysis, weight breakdown, and recommended actions.`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+/* =======================================================================
+   Load Assurance Agent — Custom CSS
+   Supplements the sap_horizon theme without overriding core Fiori styles.
+   ======================================================================= */
+
+/* ─── Chat message bubbles ─────────────────────────────────────────────── */
+
+/**
+ * Agent messages: left-aligned card-style bubble.
+ * Wraps the MessageStrip used as the bubble inside a CustomListItem.
+ */
+.laAgentMessage {
+    padding: 0.25rem 0.5rem 0.25rem 0;
+    width: 100%;
+}
+
+/**
+ * User messages: right-aligned with a highlighted background.
+ */
+.laUserMessage {
+    padding: 0.25rem 0 0.25rem 0.5rem;
+    width: 100%;
+}
+
+/**
+ * Give the chat list a maximum height and allow scrolling so it does not
+ * push other sections off-screen.
+ */
+#chatList.sapMList {
+    max-height: 28rem;
+    overflow-y: auto;
+    border: 1px solid var(--sapList_BorderColor);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+    background-color: var(--sapGroup_ContentBackground);
+}
+
+/* ─── ObjectPageSection title capitalisation ───────────────────────────── */
+/*
+ * Override the default uppercase transform applied to ObjectPageSection
+ * titles so that "AI Analysis" renders correctly (not "AI ANALYSIS").
+ */
+.sapUxAPObjectPageSectionTitle {
+    text-transform: none !important;
+}
+
+/* ─── Compact table density helper ─────────────────────────────────────── */
+/*
+ * When the host shell sets sapUiSizeCompact the table rows become narrower.
+ * This rule keeps the ObjectStatus icons vertically centred in compact mode.
+ */
+.sapUiSizeCompact .sapMObjectStatus {
+    vertical-align: middle;
+}
+
+/* ─── Suggestion chips ──────────────────────────────────────────────────── */
+/*
+ * Suggestion buttons rendered inside FlexBox wrap should not take up full
+ * width — keep them inline.
+ */
+#suggestionChips .sapMBtn {
+    min-width: auto;
+    border: 1px solid var(--sapButton_BorderColor);
+    border-radius: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+/* ─── KPI ObjectNumber emphasis ────────────────────────────────────────── */
+/*
+ * Slightly enlarge the KPI numbers shown in the sub-header bar.
+ */
+#kpiTotal .sapMObjectNumberText {
+    font-size: 1.125rem;
+    font-weight: 700;
+}

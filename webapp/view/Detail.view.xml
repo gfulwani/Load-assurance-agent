@@ -1,0 +1,404 @@
+<mvc:View
+    controllerName="com.loadassurance.agent.controller.Detail"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+    xmlns:uxap="sap.uxap"
+    xmlns:layout="sap.ui.layout"
+    xmlns:form="sap.ui.layout.form"
+    displayBlock="true">
+
+    <uxap:ObjectPageLayout
+        id="objectPageLayout"
+        showTitleInHeaderContent="true"
+        alwaysShowContentHeader="false"
+        preserveHeaderStateOnScroll="false"
+        backgroundDesign="Standard"
+        class="sapUiNoContentPadding">
+
+        <!-- ═══ Object Page Header ══════════════════════════════════ -->
+        <uxap:headerTitle>
+            <uxap:ObjectPageDynamicHeaderTitle>
+                <uxap:expandedHeading>
+                    <Title
+                        id="huIDTitle"
+                        text="{detailView>/huID}"
+                        level="H2"
+                        titleStyle="H2" />
+                </uxap:expandedHeading>
+                <uxap:snappedHeading>
+                    <Title
+                        id="huIDTitleSnapped"
+                        text="{detailView>/huID}"
+                        level="H3"
+                        titleStyle="H4" />
+                </uxap:snappedHeading>
+                <uxap:expandedContent>
+                    <ObjectStatus
+                        id="huStatusHeader"
+                        text="{detailView>/status}"
+                        state="{
+                            path: 'detailView>/status',
+                            formatter: '.formatter.statusState'
+                        }"
+                        icon="{
+                            path: 'detailView>/status',
+                            formatter: '.formatter.statusIcon'
+                        }"
+                        inverted="true" />
+                    <ObjectStatus
+                        text="Delivery: {detailView>/delivery}"
+                        state="Information" />
+                </uxap:expandedContent>
+                <uxap:snappedContent>
+                    <ObjectStatus
+                        text="{detailView>/status}"
+                        state="{
+                            path: 'detailView>/status',
+                            formatter: '.formatter.statusState'
+                        }" />
+                </uxap:snappedContent>
+                <uxap:actions>
+                    <Button
+                        id="validateButton"
+                        text="Validate HU"
+                        type="Emphasized"
+                        icon="sap-icon://activate"
+                        press=".onValidate"
+                        enabled="{= ${detailView>/busy} !== true }" />
+                    <Button
+                        id="navBackButton"
+                        text="Back to Worklist"
+                        type="Transparent"
+                        icon="sap-icon://nav-back"
+                        press=".onNavBack" />
+                </uxap:actions>
+            </uxap:ObjectPageDynamicHeaderTitle>
+        </uxap:headerTitle>
+
+        <!-- ═══ Header Content ══════════════════════════════════════ -->
+        <uxap:headerContent>
+            <layout:HorizontalLayout allowWrapping="true">
+                <layout:VerticalLayout class="sapUiSmallMarginEnd">
+                    <Label text="HU ID" />
+                    <Text text="{detailView>/huID}" class="sapUiSmallMarginTop" />
+                </layout:VerticalLayout>
+                <layout:VerticalLayout class="sapUiSmallMarginEnd">
+                    <Label text="Outbound Delivery" />
+                    <Text text="{detailView>/delivery}" class="sapUiSmallMarginTop" />
+                </layout:VerticalLayout>
+                <layout:VerticalLayout class="sapUiSmallMarginEnd">
+                    <Label text="Severity" />
+                    <ObjectStatus
+                        text="{detailView>/severity}"
+                        state="{
+                            path: 'detailView>/severity',
+                            formatter: '.formatter.severityState'
+                        }"
+                        class="sapUiSmallMarginTop" />
+                </layout:VerticalLayout>
+                <layout:VerticalLayout class="sapUiSmallMarginEnd">
+                    <Label text="AI Confidence" />
+                    <ObjectNumber
+                        number="{
+                            path: 'detailView>/validationConfidence',
+                            type: 'sap.ui.model.type.Float',
+                            formatOptions: { maxFractionDigits: 1, minFractionDigits: 1 }
+                        }"
+                        unit="%"
+                        class="sapUiSmallMarginTop" />
+                </layout:VerticalLayout>
+                <layout:VerticalLayout>
+                    <Label text="Weight Delta" />
+                    <ObjectNumber
+                        number="{
+                            parts: ['detailView>/expectedWeight','detailView>/actualWeight'],
+                            formatter: '.formatter.weightDeltaNumber'
+                        }"
+                        unit="%"
+                        state="{
+                            parts: ['detailView>/expectedWeight','detailView>/actualWeight'],
+                            formatter: '.formatter.weightDeltaState'
+                        }"
+                        class="sapUiSmallMarginTop" />
+                </layout:VerticalLayout>
+            </layout:HorizontalLayout>
+        </uxap:headerContent>
+
+        <!-- ═══ Sections ════════════════════════════════════════════ -->
+        <uxap:sections>
+
+            <!-- ─── Section 1: Validation Results ───────────────── -->
+            <uxap:ObjectPageSection
+                id="sectionValidation"
+                title="Validation Results"
+                titleUppercase="false">
+                <uxap:subSections>
+                    <uxap:ObjectPageSubSection title="Weight &amp; Measurements">
+                        <uxap:blocks>
+                            <VBox class="sapUiSmallMargin">
+                                <form:SimpleForm
+                                    id="weightForm"
+                                    editable="false"
+                                    layout="ResponsiveGridLayout"
+                                    labelSpanXL="4"
+                                    labelSpanL="4"
+                                    labelSpanM="4"
+                                    labelSpanS="12"
+                                    columnsXL="2"
+                                    columnsL="2"
+                                    columnsM="2">
+                                    <form:content>
+                                        <Label text="Expected Weight" />
+                                        <ObjectNumber
+                                            number="{
+                                                path: 'detailView>/expectedWeight',
+                                                type: 'sap.ui.model.type.Float',
+                                                formatOptions: { maxFractionDigits: 3, minFractionDigits: 3 }
+                                            }"
+                                            unit="kg" />
+                                        <Label text="Actual Weight" />
+                                        <ObjectNumber
+                                            number="{
+                                                path: 'detailView>/actualWeight',
+                                                type: 'sap.ui.model.type.Float',
+                                                formatOptions: { maxFractionDigits: 3, minFractionDigits: 3 }
+                                            }"
+                                            unit="kg" />
+                                        <Label text="Weight Delta" />
+                                        <ObjectNumber
+                                            id="weightDeltaDisplay"
+                                            number="{
+                                                parts: ['detailView>/expectedWeight','detailView>/actualWeight'],
+                                                formatter: '.formatter.weightDeltaNumber'
+                                            }"
+                                            unit="%"
+                                            state="{
+                                                parts: ['detailView>/expectedWeight','detailView>/actualWeight'],
+                                                formatter: '.formatter.weightDeltaState'
+                                            }" />
+                                        <Label text="Label Status" />
+                                        <ObjectStatus
+                                            id="labelStatusDisplay"
+                                            text="{detailView>/labelStatus}"
+                                            state="{
+                                                path: 'detailView>/labelStatus',
+                                                formatter: '.formatter.labelStatusState'
+                                            }" />
+                                        <Label text="Stacking Compliance" />
+                                        <ObjectStatus
+                                            id="stackingDisplay"
+                                            text="{
+                                                path: 'detailView>/stackingCompliance',
+                                                formatter: '.formatter.booleanText'
+                                            }"
+                                            state="{
+                                                path: 'detailView>/stackingCompliance',
+                                                formatter: '.formatter.booleanState'
+                                            }" />
+                                        <Label text="Issue Description" />
+                                        <Text
+                                            text="{detailView>/issueDescription}"
+                                            wrapping="true" />
+                                    </form:content>
+                                </form:SimpleForm>
+                            </VBox>
+                        </uxap:blocks>
+                    </uxap:ObjectPageSubSection>
+                </uxap:subSections>
+            </uxap:ObjectPageSection>
+
+            <!-- ─── Section 2: AI Analysis ───────────────────────── -->
+            <uxap:ObjectPageSection
+                id="sectionAI"
+                title="AI Analysis"
+                titleUppercase="false">
+                <uxap:subSections>
+                    <uxap:ObjectPageSubSection title="Insights &amp; Recommendations">
+                        <uxap:blocks>
+                            <VBox class="sapUiSmallMargin" width="100%">
+                                <!-- AI Insight strip -->
+                                <MessageStrip
+                                    id="aiInsightStrip"
+                                    text="{detailView>/aiInsight}"
+                                    type="Information"
+                                    showIcon="true"
+                                    showCloseButton="false"
+                                    class="sapUiSmallMarginBottom"
+                                    visible="{= !!${detailView>/aiInsight} }" />
+
+                                <form:SimpleForm
+                                    editable="false"
+                                    layout="ResponsiveGridLayout"
+                                    labelSpanXL="3"
+                                    labelSpanL="3"
+                                    labelSpanM="4"
+                                    labelSpanS="12"
+                                    columnsXL="1"
+                                    columnsL="1"
+                                    columnsM="1">
+                                    <form:content>
+                                        <Label text="AI Insight" />
+                                        <Text
+                                            id="aiInsightText"
+                                            text="{detailView>/aiInsight}"
+                                            wrapping="true" />
+                                        <Label text="Root Cause" />
+                                        <Text
+                                            id="rootCauseText"
+                                            text="{detailView>/rootCause}"
+                                            wrapping="true" />
+                                        <Label text="Recommended Action" />
+                                        <Text
+                                            id="recommendedActionText"
+                                            text="{detailView>/recommendedAction}"
+                                            wrapping="true" />
+                                    </form:content>
+                                </form:SimpleForm>
+
+                                <!-- No AI data placeholder -->
+                                <VBox
+                                    visible="{= !${detailView>/aiInsight} }"
+                                    alignItems="Center"
+                                    class="sapUiMediumMarginTop sapUiMediumMarginBottom">
+                                    <core:Icon
+                                        src="sap-icon://ai"
+                                        size="3rem"
+                                        color="@sapUiBaseText" />
+                                    <Title
+                                        text="No AI Analysis Available"
+                                        titleStyle="H5"
+                                        class="sapUiSmallMarginTop" />
+                                    <Text
+                                        text="Click 'Validate HU' to trigger AI analysis for this handling unit."
+                                        textAlign="Center"
+                                        class="sapUiSmallMarginTop" />
+                                </VBox>
+                            </VBox>
+                        </uxap:blocks>
+                    </uxap:ObjectPageSubSection>
+                </uxap:subSections>
+            </uxap:ObjectPageSection>
+
+            <!-- ─── Section 3: AI Copilot Chat ───────────────────── -->
+            <uxap:ObjectPageSection
+                id="sectionChat"
+                title="AI Copilot"
+                titleUppercase="false">
+                <uxap:subSections>
+                    <uxap:ObjectPageSubSection title="Chat with Load Assurance Copilot">
+                        <uxap:blocks>
+                            <VBox
+                                id="chatContainer"
+                                class="sapUiSmallMargin"
+                                width="100%">
+
+                                <!-- Chat header info strip -->
+                                <MessageStrip
+                                    text="Ask the AI Copilot about this handling unit. Context is automatically included in each message."
+                                    type="Information"
+                                    showIcon="true"
+                                    showCloseButton="false"
+                                    class="sapUiSmallMarginBottom" />
+
+                                <!-- Chat messages list -->
+                                <List
+                                    id="chatList"
+                                    items="{chat>/messages}"
+                                    showSeparators="None"
+                                    noDataText="No messages yet. Start the conversation!"
+                                    class="sapUiSmallMarginBottom">
+                                    <CustomListItem>
+                                        <VBox
+                                            class="{= ${chat>role} === 'user' ? 'laUserMessage' : 'laAgentMessage' }"
+                                            width="100%">
+                                            <HBox
+                                                justifyContent="{= ${chat>role} === 'user' ? 'End' : 'Start' }"
+                                                width="100%"
+                                                class="sapUiSmallMarginBottom">
+                                                <VBox maxWidth="75%">
+                                                    <!-- Role label -->
+                                                    <Text
+                                                        text="{= ${chat>role} === 'user' ? 'You' : 'AI Copilot' }"
+                                                        class="sapUiTinyMarginBottom"
+                                                        visible="{= ${chat>role} !== 'user' }" />
+                                                    <!-- Bubble -->
+                                                    <MessageStrip
+                                                        text="{chat>text}"
+                                                        type="{= ${chat>role} === 'user' ? 'None' : 'Information' }"
+                                                        showIcon="{= ${chat>role} !== 'user' }"
+                                                        showCloseButton="false" />
+                                                    <!-- Timestamp -->
+                                                    <Text
+                                                        text="{chat>timestamp}"
+                                                        class="sapUiTinyMarginTop"
+                                                        design="Small" />
+                                                </VBox>
+                                            </HBox>
+                                        </VBox>
+                                    </CustomListItem>
+                                </List>
+
+                                <!-- Busy indicator for streaming reply -->
+                                <BusyIndicator
+                                    id="chatBusy"
+                                    visible="{detailView>/chatBusy}"
+                                    size="Small"
+                                    class="sapUiSmallMarginBottom" />
+
+                                <!-- Suggested prompts -->
+                                <FlexBox
+                                    id="suggestionChips"
+                                    wrap="Wrap"
+                                    class="sapUiSmallMarginBottom">
+                                    <Button
+                                        text="Why did this HU fail?"
+                                        type="Transparent"
+                                        class="sapUiTinyMarginEnd sapUiTinyMarginBottom"
+                                        press=".onSuggestionPress" />
+                                    <Button
+                                        text="What is the root cause?"
+                                        type="Transparent"
+                                        class="sapUiTinyMarginEnd sapUiTinyMarginBottom"
+                                        press=".onSuggestionPress" />
+                                    <Button
+                                        text="Recommend corrective action"
+                                        type="Transparent"
+                                        class="sapUiTinyMarginEnd sapUiTinyMarginBottom"
+                                        press=".onSuggestionPress" />
+                                    <Button
+                                        text="Explain weight deviation"
+                                        type="Transparent"
+                                        class="sapUiTinyMarginEnd sapUiTinyMarginBottom"
+                                        press=".onSuggestionPress" />
+                                </FlexBox>
+
+                                <!-- Input row -->
+                                <HBox width="100%" alignItems="Center">
+                                    <Input
+                                        id="chatInput"
+                                        placeholder="Ask about this HU…"
+                                        width="100%"
+                                        submit=".onSendChat"
+                                        value="{detailView>/chatMessage}"
+                                        enabled="{= ${detailView>/chatBusy} !== true }"
+                                        class="sapUiSmallMarginEnd" />
+                                    <Button
+                                        id="sendButton"
+                                        text="Send"
+                                        type="Emphasized"
+                                        icon="sap-icon://paper-plane"
+                                        press=".onSendChat"
+                                        enabled="{= ${detailView>/chatBusy} !== true }" />
+                                </HBox>
+
+                            </VBox>
+                        </uxap:blocks>
+                    </uxap:ObjectPageSubSection>
+                </uxap:subSections>
+            </uxap:ObjectPageSection>
+
+        </uxap:sections>
+
+    </uxap:ObjectPageLayout>
+</mvc:View>

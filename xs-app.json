@@ -1,0 +1,28 @@
+{
+  "welcomeFile": "webapp/index.html",
+  "authenticationMethod": "route",
+  "routes": [
+    {
+      "source": "^/load-assurance(/.*)?$",
+      "target": {
+        "type": "destination",
+        "name": "load-assurance-backend",
+        "forwardAuthToken": true
+      },
+      "authenticationType": "xsuaa",
+      "description": "Route all /load-assurance calls to the CAP backend destination"
+    },
+    {
+      "source": "^/webapp(/.*)?$",
+      "localDir": "webapp",
+      "authenticationType": "xsuaa",
+      "description": "Serve the SAP UI5 app static files"
+    },
+    {
+      "source": "^(.*)$",
+      "localDir": "webapp",
+      "authenticationType": "xsuaa",
+      "description": "Fallback — serve the UI5 app for all other paths (SPA catch-all)"
+    }
+  ]
+}

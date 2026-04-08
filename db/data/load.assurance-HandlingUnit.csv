@@ -1,0 +1,6 @@
+ID,huID,outboundDelivery,expectedWeight,actualWeight,status,severity,issueDescription,validationConfidence
+hu-001-uuid-0000-0000-000000000001,HU-EWM-001,OD-2024-00123,245.500,247.200,Passed,Low,,98.50
+hu-002-uuid-0000-0000-000000000002,HU-EWM-002,OD-2024-00124,180.000,162.300,Failed,Critical,"Actual weight deviates by 9.8% from expected — exceeds 5% threshold. Possible missing items or wrong product loaded.",95.10
+hu-003-uuid-0000-0000-000000000003,HU-EWM-003,OD-2024-00124,320.750,333.900,Review,High,"Weight variance of 4.1% is within threshold but label scan returned DAMAGED status. Manual review required.",72.30
+hu-004-uuid-0000-0000-000000000004,HU-EWM-004,OD-2024-00125,95.000,94.800,Passed,Low,,99.20
+hu-005-uuid-0000-0000-000000000005,HU-EWM-005,OD-2024-00126,410.000,388.500,Failed,High,"Weight short by 21.5 kg (5.2% deviation). Stacking configuration non-compliant — top-heavy arrangement detected.",88.75

@@ -1,0 +1,12 @@
+<mvc:View
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m">
+    <MessagePage
+        id="notFoundPage"
+        title="Not Found"
+        text="The requested page could not be found."
+        description="Please go back to the Worklist."
+        showNavButton="true"
+        navButtonPress=".onNavBack"
+        icon="sap-icon://document" />
+</mvc:View>

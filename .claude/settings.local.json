@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cds --version)",
+      "Bash(node -e \"const cds = require\\('@sap/cds-dk'\\); console.log\\(JSON.stringify\\(Object.keys\\(cds\\), null, 2\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('version:', d.get\\('version'\\)\\); print\\('main:', d.get\\('main'\\)\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const p=JSON.parse\\(fs.readFileSync\\('C:/Users/I757125/AppData/Roaming/npm/node_modules/@sap/cds-dk/node_modules/@sap/cds/package.json'\\)\\); console.log\\('cds version:', p.version\\)\")",
+      "Bash(node -e \"const fs=require\\('fs'\\); const p=JSON.parse\\(fs.readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('peerDeps:', JSON.stringify\\(p.peerDependencies,null,2\\)\\); console.log\\('deps:', JSON.stringify\\(p.dependencies,null,2\\)\\)\")",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(cds watch:*)",
+      "Read(//tmp/**)",
+      "Bash(jobs -l)",
+      "Bash(curl -s \"http://localhost:4005/load-assurance/HandlingUnits\")",
+      "Bash(pkill -f \"cds watch\")",
+      "Bash(pkill -f \"cds serve\")",
+      "Bash(netstat -ano)",
+      "Bash(taskkill.exe /PID 13892 /F)",
+      "Bash(curl:*)",
+      "Bash(npx cds:*)",
+      "Bash(ls /c/projects/load-assurance/load-assurance-agent/*.sqlite)",
+      "Bash(cf logs:*)",
+      "Bash(cf push:*)",
+      "Bash(grep -v \"^//\")"
+    ]
+  }
+}

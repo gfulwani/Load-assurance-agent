@@ -1,0 +1,27 @@
+{
+  "xsappname": "load-assurance-agent",
+  "tenant-mode": "dedicated",
+  "description": "Security descriptor for Load Assurance Agent",
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.viewer",
+      "description": "View handling units and validation results"
+    },
+    {
+      "name": "$XSAPPNAME.operator",
+      "description": "Approve, block, and re-validate handling units"
+    }
+  ],
+  "role-templates": [
+    {
+      "name": "Viewer",
+      "description": "Read-only access",
+      "scope-references": ["$XSAPPNAME.viewer"]
+    },
+    {
+      "name": "Operator",
+      "description": "Full operator access",
+      "scope-references": ["$XSAPPNAME.viewer", "$XSAPPNAME.operator"]
+    }
+  ]
+}
