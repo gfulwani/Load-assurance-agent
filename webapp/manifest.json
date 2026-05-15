@@ -4,14 +4,18 @@
     "id": "com.loadassurance.agent",
     "type": "application",
     "i18n": "i18n/i18n.properties",
-    "title": "Load Assurance Agent",
-    "description": "AI-powered load assurance for SAP EWM — validates handling units before dispatch",
+    "title": "{{appTitle}}",
+    "description": "{{appDescription}}",
     "applicationVersion": {
       "version": "1.0.0"
     },
+    "sourceTemplate": {
+      "id": "ui5template.basicSAPUI5ApplicationProject",
+      "version": "1.40.12"
+    },
     "dataSources": {
       "mainService": {
-        "uri": "/load-assurance/",
+        "uri": "/api/",
         "type": "OData",
         "settings": {
           "odataVersion": "4.0",
@@ -19,7 +23,28 @@
         }
       }
     },
+    "crossNavigation": {
+      "inbounds": {
+        "LoadAssuranceAgent-display": {
+          "semanticObject": "LoadAssuranceAgent",
+          "action": "display",
+          "title": "{{appTitle}}",
+          "subTitle": "{{appDescription}}",
+          "icon": "sap-icon://shipping-status",
+          "signature": {
+            "parameters": {},
+            "additionalParameters": "allowed"
+          }
+        }
+      }
+    },
     "offline": false
+  },
+  "sap.fiori": {
+    "registrationIds": [
+      "F-LoadAssuranceAgent"
+    ],
+    "archeType": "transactional"
   },
   "sap.ui": {
     "technology": "UI5",
@@ -35,7 +60,13 @@
       "desktop": true,
       "tablet": true,
       "phone": false
-    }
+    },
+    "supportedThemes": [
+      "sap_horizon",
+      "sap_horizon_dark",
+      "sap_fiori_3",
+      "sap_fiori_3_dark"
+    ]
   },
   "sap.ui5": {
     "rootView": {
@@ -58,15 +89,15 @@
       "compact": true,
       "cozy": true
     },
+    "handleValidation": true,
     "models": {
       "": {
         "dataSource": "mainService",
-        "preload": true,
+        "preload": false,
         "settings": {
           "synchronizationMode": "None",
           "operationMode": "Server",
-          "autoExpandSelect": true,
-          "earlyRequests": true
+          "autoExpandSelect": true
         }
       },
       "i18n": {
@@ -103,7 +134,12 @@
           "target": "worklist"
         },
         {
-          "pattern": "HandlingUnits/{huID}",
+          "pattern": "scan/{delivery}/{warehouse}",
+          "name": "scan",
+          "target": "scan"
+        },
+        {
+          "pattern": "scan/{delivery}/{warehouse}/hu/{huId}",
           "name": "detail",
           "target": "detail"
         },
@@ -119,15 +155,20 @@
           "viewName": "Worklist",
           "viewLevel": 1
         },
+        "scan": {
+          "viewId": "scan",
+          "viewName": "Scan",
+          "viewLevel": 2
+        },
         "detail": {
           "viewId": "detail",
           "viewName": "Detail",
-          "viewLevel": 2
+          "viewLevel": 3
         },
         "notFound": {
           "viewId": "notFound",
           "viewName": "NotFound",
-          "viewLevel": 3
+          "viewLevel": 4
         }
       }
     }

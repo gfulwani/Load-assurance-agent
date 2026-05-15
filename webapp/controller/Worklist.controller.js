@@ -3,240 +3,459 @@ sap.ui.define([
     "sap/ui/model/json/JSONModel",
     "sap/ui/model/Filter",
     "sap/ui/model/FilterOperator",
+    "sap/ui/core/UIComponent",
     "com/loadassurance/agent/model/formatter",
     "sap/m/MessageToast"
-], function (Controller, JSONModel, Filter, FilterOperator, formatter, MessageToast) {
+], function (Controller, JSONModel, Filter, FilterOperator, UIComponent, formatter, MessageToast) {
     "use strict";
+
+    var BASE = "/api";
 
     return Controller.extend("com.loadassurance.agent.controller.Worklist", {
 
         formatter: formatter,
 
-        /* ============================================================
-         * Lifecycle
-         * ============================================================ */
+        /* ─── Lifecycle ─────────────────────────────────────────────── */
 
         onInit: function () {
-            // View model for counts, filter state, busy flag
+            var sSavedIP = localStorage.getItem("scaleIP") || "";
             var oViewModel = new JSONModel({
-                totalCount:          0,
-                passedCount:         0,
-                failedCount:         0,
-                reviewCount:         0,
-                avgConfidence:       "—",
-                tableItemCount:      0,
-                selectedStatusFilter: "All",
-                busy:                false,
-                delay:               0
+                warehouse:      "2001",
+                delivery:       "",
+                deliveries:     [],
+                deliveryCount:  0,
+                busy:           false,
+                noDataText:     "Enter a warehouse number above and press Refresh.",
+                showHistory:    false,
+                chatBusy:       false,
+                chatMessage:    "",
+                scaleIP:        sSavedIP,
+                scaleConnected: !!sSavedIP,
+                scaleBusy:      false,
+                // Vision state
+                visionBusy:       false,
+                visionDelivery:   "",
+                visionFindings:   null,
+                ewmSummary:       "",
+                aiVerdict:        "",
+                huLabelMatch:     null,
+                itemCountMatch:   null,
+                palletCondition:  "",
+                confidence:       ""
             });
             this.getView().setModel(oViewModel, "worklistView");
 
-            // Bind the table and attach to the route matched event so the
-            // KPI counts are refreshed whenever the user navigates back.
-            var oRouter = sap.ui.core.UIComponent.getRouterFor(this);
+            var oChatModel = new JSONModel({ messages: [{
+                role:      "agent",
+                text:      "Hello! I'm your Load Assurance Copilot. Scan a delivery to validate it, or ask me anything about warehouse operations.",
+                timestamp: this._chatNow()
+            }]});
+            this.getView().setModel(oChatModel, "wlChat");
+
+            var oRouter = UIComponent.getRouterFor(this);
             oRouter.getRoute("worklist").attachPatternMatched(this._onRouteMatched, this);
         },
 
         _onRouteMatched: function () {
-            this._refreshKPIs();
-        },
-
-        /* ============================================================
-         * Table / binding
-         * ============================================================ */
-
-        /**
-         * Called after the table's list binding has been updated.
-         * Reads the count from the binding and keeps the title in sync.
-         * @param {sap.ui.base.Event} oEvent
-         */
-        onTableUpdateFinished: function (oEvent) {
             var oViewModel = this.getView().getModel("worklistView");
-            var nTotal     = oEvent.getParameter("total");
-
-            oViewModel.setProperty("/tableItemCount", nTotal || 0);
-            this._refreshKPIs();
+            var sWarehouse = oViewModel.getProperty("/warehouse");
+            if (sWarehouse) {
+                this._loadDeliveries(sWarehouse);
+            }
         },
 
-        /* ============================================================
-         * Search & Filter
-         * ============================================================ */
+        /* ─── Load deliveries ───────────────────────────────────────── */
+
+        onLoadDeliveries: function () {
+            var sWarehouse = this.getView().getModel("worklistView").getProperty("/warehouse").trim();
+            if (!sWarehouse) {
+                MessageToast.show("Enter a warehouse number first.");
+                return;
+            }
+            this._loadDeliveries(sWarehouse);
+        },
+
+        _loadDeliveries: function (sWarehouse) {
+            var oViewModel = this.getView().getModel("worklistView");
+            oViewModel.setProperty("/busy", true);
+            oViewModel.setProperty("/noDataText", "Loading deliveries…");
+            oViewModel.setProperty("/showHistory", false);
+
+            fetch(BASE + "/getDeliveries", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ warehouse: sWarehouse })
+            })
+            .then(function (oResp) {
+                if (!oResp.ok) { throw new Error("HTTP " + oResp.status); }
+                return oResp.json();
+            })
+            .then(function (oData) {
+                var aDeliveries = (oData.value || []).map(function (d) {
+                    return {
+                        outboundDelivery: d.outboundDelivery,
+                        huCount:          d.huCount,
+                        lastStatus:       "",
+                        lastScanAt:       ""
+                    };
+                });
+
+                // Apply any status change made on the Scan page
+                try {
+                    var sLast = sessionStorage.getItem("lastScanStatus");
+                    if (sLast) {
+                        var oLast = JSON.parse(sLast);
+                        sessionStorage.removeItem("lastScanStatus");
+                        aDeliveries.forEach(function (d) {
+                            if (d.outboundDelivery === oLast.delivery) {
+                                d.lastStatus = oLast.status;
+                                d.lastScanAt = new Date().toLocaleString();
+                            }
+                        });
+                    }
+                } catch (e) { /* ignore */ }
+
+                oViewModel.setProperty("/deliveries",    aDeliveries);
+                oViewModel.setProperty("/deliveryCount", aDeliveries.length);
+                oViewModel.setProperty("/noDataText",
+                    aDeliveries.length === 0
+                        ? "No open outbound deliveries found in warehouse " + sWarehouse + "."
+                        : "");
+                oViewModel.setProperty("/busy", false);
+
+                // Enrich with last scan status from OData history (best-effort)
+                this._enrichWithHistory(aDeliveries, sWarehouse, oViewModel);
+            }.bind(this))
+            .catch(function (oErr) {
+                oViewModel.setProperty("/busy", false);
+                oViewModel.setProperty("/noDataText", "Failed to load deliveries: " + oErr.message);
+            });
+        },
 
         /**
-         * Live-search handler: filters the table by huID or outboundDelivery.
-         * @param {sap.ui.base.Event} oEvent
+         * For each delivery, look up the most recent ShipmentScan to show last status.
+         * Done via OData binding — non-blocking, enriches the list after it renders.
          */
-        onSearch: function (oEvent) {
-            var sQuery   = oEvent.getParameter("query") || oEvent.getParameter("newValue") || "";
-            var aFilters = [];
-
-            if (sQuery.trim()) {
-                aFilters.push(new Filter({
-                    filters: [
-                        new Filter("huID",             FilterOperator.Contains, sQuery),
-                        new Filter("outboundDelivery", FilterOperator.Contains, sQuery)
+        _enrichWithHistory: function (aDeliveries, sWarehouse, oViewModel) {
+            var oODataModel = this.getOwnerComponent().getModel();
+            if (!oODataModel) { return; }
+            aDeliveries.forEach(function (oDelivery, iIdx) {
+                var oListBinding = oODataModel.bindList("/ShipmentScans", null, null,
+                    [
+                        new Filter(
+                            [new Filter("outboundDelivery", FilterOperator.EQ, oDelivery.outboundDelivery),
+                             new Filter("warehouse",        FilterOperator.EQ, sWarehouse),
+                             new Filter("dispatchStatus",   FilterOperator.NE, "SUPERSEDED")],
+                            true
+                        )
                     ],
-                    and: false
-                }));
-            }
-
-            // Merge with the active status filter
-            var sStatus = this.getView().getModel("worklistView").getProperty("/selectedStatusFilter");
-            if (sStatus && sStatus !== "All") {
-                aFilters.push(new Filter("status", FilterOperator.EQ, sStatus));
-            }
-
-            var oTable   = this.byId("huTable");
-            var oBinding = oTable.getBinding("items");
-            oBinding.filter(aFilters);
+                    { $orderby: "createdAt desc" }
+                );
+                oListBinding.requestContexts(0, 1).then(function (aCtx) {
+                    if (aCtx && aCtx.length > 0) {
+                        var oScan = aCtx[0].getObject();
+                        var aDelivs = oViewModel.getProperty("/deliveries");
+                        aDelivs[iIdx].lastStatus = oScan.dispatchStatus || "";
+                        aDelivs[iIdx].lastScanAt = oScan.createdAt
+                            ? new Date(oScan.createdAt).toLocaleString()
+                            : "";
+                        oViewModel.setProperty("/deliveries", aDelivs);
+                    }
+                }).catch(function () { /* silent */ });
+            });
         },
 
-        /**
-         * SegmentedButton handler — filters the table by validation status.
-         * @param {sap.ui.base.Event} oEvent
-         */
-        onStatusFilterChange: function (oEvent) {
-            var sKey     = oEvent.getParameter("item").getKey();
+        /* ─── Search filter ─────────────────────────────────────────── */
+
+        onFilterDeliveries: function (oEvent) {
+            var sQuery = (oEvent.getParameter("newValue") || "").toLowerCase();
             var oViewModel = this.getView().getModel("worklistView");
-            oViewModel.setProperty("/selectedStatusFilter", sKey);
-
-            var aFilters = [];
-            if (sKey !== "All") {
-                aFilters.push(new Filter("status", FilterOperator.EQ, sKey));
+            var aAll = oViewModel.getProperty("/deliveries") || [];
+            if (!sQuery) {
+                oViewModel.setProperty("/deliveries", aAll);
+                return;
             }
-
-            var oTable   = this.byId("huTable");
-            var oBinding = oTable.getBinding("items");
-            oBinding.filter(aFilters);
+            var aFiltered = aAll.filter(function (d) {
+                return d.outboundDelivery.toLowerCase().includes(sQuery);
+            });
+            oViewModel.setProperty("/deliveries", aFiltered);
         },
 
-        /* ============================================================
-         * Refresh
-         * ============================================================ */
+        /* ─── Navigate to Scan ──────────────────────────────────────── */
 
-        /**
-         * Refresh button handler — refreshes the OData V4 list binding.
-         */
-        onRefresh: function () {
-            var oTable   = this.byId("huTable");
-            var oBinding = oTable.getBinding("items");
-
-            if (oBinding.hasPendingChanges()) {
-                oBinding.resetChanges();
+        onScanDelivery: function () {
+            var oViewModel = this.getView().getModel("worklistView");
+            var sDelivery  = (oViewModel.getProperty("/delivery")  || "").trim();
+            var sWarehouse = (oViewModel.getProperty("/warehouse") || "").trim();
+            if (!sDelivery || !sWarehouse) {
+                MessageToast.show("Enter both warehouse and delivery number.");
+                return;
             }
-            oBinding.refresh();
-            MessageToast.show("Refreshing handling units…");
+            UIComponent.getRouterFor(this).navTo("scan", {
+                delivery:  encodeURIComponent(sDelivery),
+                warehouse: encodeURIComponent(sWarehouse)
+            });
         },
 
-        /* ============================================================
-         * Navigation
-         * ============================================================ */
-
-        /**
-         * ColumnListItem press handler — navigate to the Detail page
-         * passing the HU's ID as a route parameter.
-         * @param {sap.ui.base.Event} oEvent
-         */
-        onItemPress: function (oEvent) {
-            var oItem    = oEvent.getSource();
-            // getBindingContext works on ColumnListItem or ObjectIdentifier
-            var oContext = oItem.getBindingContext
-                ? oItem.getBindingContext()
-                : oItem.getParent().getBindingContext();
-
-            if (!oContext) {
-                // Fallback: traverse up to the ColumnListItem
-                var oParent = oItem.getParent();
-                while (oParent && !oParent.getBindingContext) {
-                    oParent = oParent.getParent();
-                }
-                oContext = oParent && oParent.getBindingContext();
+        onDeliveryPress: function (oEvent) {
+            var oViewModel  = this.getView().getModel("worklistView");
+            var sWarehouse  = oViewModel.getProperty("/warehouse");
+            var oSource     = oEvent.getSource();
+            // Walk up to find the item with a worklistView binding context
+            var oItem = oSource;
+            while (oItem && !oItem.getBindingContext("worklistView")) {
+                oItem = oItem.getParent();
             }
+            var oCtx = oItem && oItem.getBindingContext("worklistView");
+            if (!oCtx) { return; }
+            var sDelivery = oCtx.getProperty("outboundDelivery");
+            UIComponent.getRouterFor(this).navTo("scan", {
+                delivery:  encodeURIComponent(sDelivery),
+                warehouse: encodeURIComponent(sWarehouse)
+            });
+        },
 
-            if (oContext) {
-                var sHuID = oContext.getProperty("huID");
-                var oRouter = sap.ui.core.UIComponent.getRouterFor(this);
-                oRouter.navTo("detail", {
-                    huID: encodeURIComponent(sHuID)
+        /* ─── Vision / Scan Pallet ──────────────────────────────────── */
+
+        onScanPalletRow: function (oEvent) {
+            var oViewModel = this.getView().getModel("worklistView");
+            // Resolve which delivery row was clicked
+            var oSource = oEvent.getSource();
+            var oItem   = oSource;
+            while (oItem && !oItem.getBindingContext("worklistView")) {
+                oItem = oItem.getParent();
+            }
+            var oCtx = oItem && oItem.getBindingContext("worklistView");
+            if (!oCtx) { return; }
+            var sDelivery = oCtx.getProperty("outboundDelivery");
+
+            // Reset vision state and store target delivery
+            oViewModel.setProperty("/visionDelivery",  sDelivery);
+            oViewModel.setProperty("/visionBusy",      false);
+            oViewModel.setProperty("/visionFindings",  null);
+            oViewModel.setProperty("/ewmSummary",      "");
+            oViewModel.setProperty("/aiVerdict",       "");
+            oViewModel.setProperty("/huLabelMatch",    null);
+            oViewModel.setProperty("/itemCountMatch",  null);
+            oViewModel.setProperty("/palletCondition", "");
+            oViewModel.setProperty("/confidence",      "");
+
+            // Open dialog first, then trigger file picker
+            var oDialog = this.byId("visionDialog");
+            if (oDialog) { oDialog.open(); }
+
+            // Trigger file input
+            var el = document.getElementById("wlPalletFileInput");
+            if (!el) {
+                el = document.createElement("input");
+                el.type    = "file";
+                el.accept  = "image/*";
+                el.capture = "environment";
+                document.body.appendChild(el);
+            }
+            el.value    = "";
+            el.onchange = this._onWlPalletImageSelected.bind(this);
+            el.click();
+        },
+
+        _onWlPalletImageSelected: function (oEvent) {
+            var oFile = oEvent.target.files && oEvent.target.files[0];
+            if (!oFile) { return; }
+
+            var oViewModel = this.getView().getModel("worklistView");
+            var sDelivery  = oViewModel.getProperty("/visionDelivery");
+            var sWarehouse = oViewModel.getProperty("/warehouse");
+
+            oViewModel.setProperty("/visionBusy", true);
+
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var sDataUrl   = e.target.result;
+                var sMediaType = oFile.type || "image/jpeg";
+                var sBase64    = sDataUrl.split(",")[1];
+
+                fetch("/api/scanPallet", {
+                    method:  "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body:    JSON.stringify({
+                        outboundDelivery: sDelivery,
+                        warehouse:        sWarehouse,
+                        imageBase64:      sBase64,
+                        imageMediaType:   sMediaType
+                    })
+                })
+                .then(function (r) {
+                    if (!r.ok) {
+                        return r.json().then(function (e) {
+                            throw new Error(e.error?.message || "Vision failed (HTTP " + r.status + ")");
+                        });
+                    }
+                    return r.json();
+                })
+                .then(function (oData) {
+                    var v = oData.value || oData;
+                    var oFindings = {};
+                    try { oFindings = JSON.parse(v.visionFindings || "{}"); } catch (e) {}
+                    oViewModel.setProperty("/visionBusy",      false);
+                    oViewModel.setProperty("/visionFindings",  oFindings);
+                    oViewModel.setProperty("/ewmSummary",      v.ewmSummary      || "");
+                    oViewModel.setProperty("/aiVerdict",       v.aiVerdict       || "");
+                    oViewModel.setProperty("/huLabelMatch",    v.huLabelMatch    != null ? v.huLabelMatch    : null);
+                    oViewModel.setProperty("/itemCountMatch",  v.itemCountMatch  != null ? v.itemCountMatch  : null);
+                    oViewModel.setProperty("/palletCondition", v.palletCondition || "UNKNOWN");
+                    oViewModel.setProperty("/confidence",      v.confidence      || "");
+                })
+                .catch(function (oErr) {
+                    oViewModel.setProperty("/visionBusy", false);
+                    sap.m.MessageBox.error("Vision scan failed: " + oErr.message, { title: "Vision Error" });
+                });
+            };
+            reader.readAsDataURL(oFile);
+        },
+
+        onVisionThenScan: function () {
+            // "Scan & Validate" button inside dialog — navigate to Scan page for full weight validation
+            var oViewModel = this.getView().getModel("worklistView");
+            var sDelivery  = oViewModel.getProperty("/visionDelivery");
+            var sWarehouse = oViewModel.getProperty("/warehouse");
+            var oDialog    = this.byId("visionDialog");
+            if (oDialog) { oDialog.close(); }
+            if (sDelivery && sWarehouse) {
+                UIComponent.getRouterFor(this).navTo("scan", {
+                    delivery:  encodeURIComponent(sDelivery),
+                    warehouse: encodeURIComponent(sWarehouse)
                 });
             }
         },
 
-        /* ============================================================
-         * KPI helpers
-         * ============================================================ */
+        onCloseVisionDialog: function () {
+            var oDialog = this.byId("visionDialog");
+            if (oDialog) { oDialog.close(); }
+        },
 
-        /**
-         * Reads HandlingUnits with $apply=aggregate to derive KPI values.
-         * Falls back to client-side counting when aggregate is unavailable.
-         * @private
-         */
-        _refreshKPIs: function () {
+        /* ─── Scale Connection ──────────────────────────────────────────── */
+
+        onConnectScale: function () {
             var oViewModel = this.getView().getModel("worklistView");
-            var oModel     = this.getOwnerComponent().getModel();
+            var sIP = (oViewModel.getProperty("/scaleIP") || "").trim();
+            if (!sIP) {
+                MessageToast.show("Enter the scale IP address or hostname.");
+                return;
+            }
 
-            // Use a lightweight $filter+$count approach for each status
-            var aStatusFetches = ["Passed", "Failed", "Review"].map(function (sStatus) {
-                return new Promise(function (resolve) {
-                    var oListBinding = oModel.bindList("/HandlingUnits", null, null, [
-                        new Filter("status", FilterOperator.EQ, sStatus)
-                    ]);
-                    oListBinding.requestContexts(0, 1).then(function () {
-                        resolve({ status: sStatus, count: oListBinding.getLength() });
-                    }).catch(function () {
-                        resolve({ status: sStatus, count: 0 });
+            oViewModel.setProperty("/scaleBusy", true);
+            oViewModel.setProperty("/scaleConnected", false);
+
+            var PATHS = ["/weight", "/api/weight", "/api/v1/weight", "/data"];
+            var promises = PATHS.map(function (sPath) {
+                return fetch("http://" + sIP + sPath, { signal: AbortSignal.timeout(3000) })
+                    .then(function (r) {
+                        if (!r.ok) { return Promise.reject(); }
+                        return r.json();
+                    })
+                    .then(function (d) {
+                        var w = parseFloat(d.weight ?? d.value ?? d.Weight ?? d.Value);
+                        if (isNaN(w)) { return Promise.reject(); }
+                        return { weight: w, unit: (d.unit || d.Unit || "KG").toUpperCase() };
                     });
-                });
             });
 
-            // Total + avg confidence via table binding length
-            var oTable   = this.byId("huTable");
-            var oBinding = oTable && oTable.getBinding("items");
-
-            Promise.all(aStatusFetches).then(function (aResults) {
-                var nPassed = 0, nFailed = 0, nReview = 0;
-                aResults.forEach(function (r) {
-                    if (r.status === "Passed") { nPassed = r.count; }
-                    if (r.status === "Failed") { nFailed = r.count; }
-                    if (r.status === "Review") { nReview = r.count; }
+            Promise.any(promises)
+                .then(function (oResult) {
+                    oViewModel.setProperty("/scaleBusy", false);
+                    oViewModel.setProperty("/scaleConnected", true);
+                    localStorage.setItem("scaleIP", sIP);
+                    MessageToast.show("Scale connected: " + oResult.weight.toFixed(3) + " " + oResult.unit);
+                })
+                .catch(function () {
+                    oViewModel.setProperty("/scaleBusy", false);
+                    oViewModel.setProperty("/scaleConnected", false);
+                    MessageToast.show("Could not reach scale at " + sIP + ". Check IP and network.");
                 });
-                var nTotal = nPassed + nFailed + nReview;
-
-                oViewModel.setProperty("/passedCount", nPassed);
-                oViewModel.setProperty("/failedCount", nFailed);
-                oViewModel.setProperty("/reviewCount", nReview);
-                oViewModel.setProperty("/totalCount",  nTotal);
-
-                if (oBinding) {
-                    oViewModel.setProperty("/tableItemCount", oBinding.getLength() || nTotal);
-                }
-
-                // Average confidence: fetch all records for the KPI
-                oModel.bindList("/HandlingUnits", null, null, null, {
-                    $select: "validationConfidence"
-                }).requestContexts(0, 200).then(function (aContexts) {
-                    var nSum = aContexts.reduce(function (s, ctx) {
-                        return s + (ctx.getProperty("validationConfidence") || 0);
-                    }, 0);
-                    var sAvg = aContexts.length
-                        ? (nSum / aContexts.length).toFixed(1)
-                        : "—";
-                    oViewModel.setProperty("/avgConfidence", sAvg);
-                }).catch(function () { /* silent */ });
-
-            }).catch(function () { /* silent */ });
         },
 
-        /* ============================================================
-         * Formatters (proxy, so they are accessible via `.formatter.x`)
-         * ============================================================ */
+        /* ─── AI Copilot Dialog ─────────────────────────────────────── */
 
-        /**
-         * Proxy to the standalone formatter module so that XML views can
-         * bind formatters with the `.formatter.` prefix through `this`.
-         */
-        _formatWeightDelta: function (nExpected, nActual) {
-            return formatter.weightDeltaText(nExpected, nActual);
+        onOpenCopilot: function () {
+            var oDialog = this.byId("copilotDialog");
+            if (oDialog) { oDialog.open(); }
+        },
+
+        onCloseCopilot: function () {
+            var oDialog = this.byId("copilotDialog");
+            if (oDialog) { oDialog.close(); }
+        },
+
+        /* ─── History ───────────────────────────────────────────────── */
+
+        onShowHistory: function () {
+            this.getView().getModel("worklistView").setProperty("/showHistory", true);
+        },
+
+        onHideHistory: function () {
+            this.getView().getModel("worklistView").setProperty("/showHistory", false);
+        },
+
+        onHistoryItemPress: function (oEvent) {
+            var oCtx = oEvent.getSource().getBindingContext();
+            if (!oCtx) { return; }
+            var oScan = oCtx.getObject();
+            UIComponent.getRouterFor(this).navTo("scan", {
+                delivery:  encodeURIComponent(oScan.outboundDelivery),
+                warehouse: encodeURIComponent(oScan.warehouse)
+            });
+        },
+
+        /* ─── AI Copilot Chat ───────────────────────────────────────── */
+
+        onWlSendChat: function () {
+            var oViewModel = this.getView().getModel("worklistView");
+            var sMsg = (oViewModel.getProperty("/chatMessage") || "").trim();
+            if (!sMsg) { return; }
+
+            this._wlAppendChat("user", sMsg);
+            oViewModel.setProperty("/chatMessage", "");
+            oViewModel.setProperty("/chatBusy", true);
+
+            var sWarehouse = oViewModel.getProperty("/warehouse");
+            var nCount     = oViewModel.getProperty("/deliveryCount");
+            var sContext   = "Warehouse=" + sWarehouse +
+                "; OpenDeliveries=" + nCount +
+                "; Page=Worklist";
+
+            var that = this;
+            fetch(BASE + "/chat", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ message: sMsg, context: sContext })
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (oData) {
+                var v = oData.value || oData;
+                that._wlAppendChat("agent", v.reply || "AI temporarily unavailable.");
+                oViewModel.setProperty("/chatBusy", false);
+            })
+            .catch(function (oErr) {
+                that._wlAppendChat("agent", "Error: " + oErr.message);
+                oViewModel.setProperty("/chatBusy", false);
+            });
+        },
+
+        onWlChatSuggestion: function (oEvent) {
+            var sText = oEvent.getSource().getText();
+            this.getView().getModel("worklistView").setProperty("/chatMessage", sText);
+            this.onWlSendChat();
+        },
+
+        _wlAppendChat: function (sRole, sText) {
+            var oChatModel = this.getView().getModel("wlChat");
+            var aMessages  = oChatModel.getProperty("/messages") || [];
+            aMessages.push({ role: sRole, text: sText, timestamp: this._chatNow() });
+            oChatModel.setProperty("/messages", aMessages);
+        },
+
+        _chatNow: function () {
+            return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         }
 
     });

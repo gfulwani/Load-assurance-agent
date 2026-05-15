@@ -9,8 +9,13 @@ applications:
     command: npm start
     path: .
     random-route: true
+    health-check-type: http
+    health-check-http-endpoint: /
+    health-check-invocation-timeout: 120
+    timeout: 120
     env:
       NODE_ENV: production
+      SUPERVISOR_EMAIL: geeta.fulwani@sap.com
     services:
       - connect-lite
       - destination-lite

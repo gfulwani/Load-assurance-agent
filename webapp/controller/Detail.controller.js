@@ -1,382 +1,219 @@
 sap.ui.define([
     "sap/ui/core/mvc/Controller",
     "sap/ui/model/json/JSONModel",
-    "sap/ui/model/Filter",
-    "sap/ui/model/FilterOperator",
+    "sap/ui/core/UIComponent",
     "com/loadassurance/agent/model/formatter",
     "sap/m/MessageBox",
-    "sap/m/MessageToast",
-    "sap/ui/core/UIComponent"
-], function (Controller, JSONModel, Filter, FilterOperator, formatter, MessageBox, MessageToast, UIComponent) {
+    "sap/m/MessageToast"
+], function (Controller, JSONModel, UIComponent, formatter, MessageBox, MessageToast) {
     "use strict";
 
-    /**
-     * Base URL for CAP service actions — relative so it works on BTP without
-     * hard-coding a hostname.
-     */
-    var SERVICE_BASE = "/load-assurance";
+    var BASE = "/api";
 
     return Controller.extend("com.loadassurance.agent.controller.Detail", {
 
         formatter: formatter,
 
-        /* ============================================================
-         * Lifecycle
-         * ============================================================ */
+        /* ─── Lifecycle ─────────────────────────────────────────────── */
 
         onInit: function () {
-            // ----------------------------------------------------------
-            // 1. View model: drives all bindings in Detail.view.xml
-            // ----------------------------------------------------------
             var oViewModel = new JSONModel({
-                // HU fields
-                huID:              "",
-                delivery:          "",
-                status:            "",
-                severity:          "",
-                expectedWeight:    null,
-                actualWeight:      null,
-                validationConfidence: null,
-                issueDescription:  "",
-                // ValidationResult fields
-                labelStatus:       "",
-                stackingCompliance: null,
-                weightDelta:       null,
-                aiInsight:         "",
-                rootCause:         "",
-                recommendedAction: "",
+                huId:             "",
+                outboundDelivery: "",
+                warehouse:        "",
+                storageBin:       "",
+                huStatus:         "",
+                expectedWeight:   null,
+                actualWeight:     null,
+                weightUnit:       "LB",
+                weightDelta:      null,
+                weightDeltaPct:   null,
+                weightPassed:     null,
+                isBlocked:        false,
+                isClosed:         false,
+                passed:           null,
+                issue:            "",
+                resolutionAction: "",
+                exceptionType:    "",
                 // UI state
-                busy:              false,
-                chatBusy:          false,
-                chatMessage:       ""
+                busy:             false,
+                resolving:        false,
+                chatBusy:         false,
+                chatMessage:      ""
             });
             this.getView().setModel(oViewModel, "detailView");
 
-            // ----------------------------------------------------------
-            // 2. Chat model: stores message history
-            // ----------------------------------------------------------
-            var oChatModel = new JSONModel({
-                messages: [
-                    {
-                        role:      "agent",
-                        text:      "Hello! I'm the Load Assurance Copilot. Select a topic or type a question about this handling unit.",
-                        timestamp: this._now()
-                    }
-                ]
-            });
+            var oChatModel = new JSONModel({ messages: [] });
             this.getView().setModel(oChatModel, "chat");
 
-            // ----------------------------------------------------------
-            // 3. Route handler
-            // ----------------------------------------------------------
-            var oRouter = UIComponent.getRouterFor(this);
-            oRouter.getRoute("detail").attachPatternMatched(this._onRouteMatched, this);
+            UIComponent.getRouterFor(this)
+                .getRoute("detail")
+                .attachPatternMatched(this._onRouteMatched, this);
         },
 
-        /* ============================================================
-         * Route handling
-         * ============================================================ */
+        /* ─── Route handling ────────────────────────────────────────── */
 
-        /**
-         * Fired when the "detail" route is matched.
-         * Reads the HU ID from the URL, loads HU data and the matching
-         * ValidationResult, then populates the view model.
-         * @private
-         */
         _onRouteMatched: function (oEvent) {
-            var sHuID = decodeURIComponent(oEvent.getParameter("arguments").huID);
-            this._loadHUDetail(sHuID);
+            var oArgs      = oEvent.getParameter("arguments");
+            var sHuId      = decodeURIComponent(oArgs.huId);
+            var sDelivery  = decodeURIComponent(oArgs.delivery);
+            var sWarehouse = decodeURIComponent(oArgs.warehouse);
 
-            // Reset chat on each navigation
-            var oChatModel = this.getView().getModel("chat");
-            oChatModel.setProperty("/messages", [
-                {
-                    role:      "agent",
-                    text:      "I'm ready to help with " + sHuID + ". Ask me anything about this handling unit.",
-                    timestamp: this._now()
-                }
-            ]);
+            // Try to read HU data from the Scan view's model (already in memory)
+            this._loadFromScanModel(sHuId, sDelivery, sWarehouse);
+
+            // Reset chat
+            this.getView().getModel("chat").setProperty("/messages", [{
+                role: "agent",
+                text: "I'm ready to help with HU " + sHuId + ". Ask me anything.",
+                timestamp: this._now()
+            }]);
         },
 
         /**
-         * Loads the HU and its first ValidationResult using OData V4.
-         * @param {string} sHuID  The business key (huID field, not UUID)
-         * @private
+         * Reads the HU record from the shared component scanData model
+         * (set by the Scan controller after a successful scan).
          */
-        _loadHUDetail: function (sHuID) {
-            var oView      = this.getView();
-            var oViewModel = oView.getModel("detailView");
-            var oODataModel = this.getOwnerComponent().getModel();
-
-            oViewModel.setProperty("/busy", true);
-            oViewModel.setProperty("/huID", sHuID);
-
-            // Bind HandlingUnits filtered by huID
-            var oHUBinding = oODataModel.bindList("/HandlingUnits", null, null, [
-                new Filter("huID", FilterOperator.EQ, sHuID)
-            ], {
-                $select: "ID,huID,outboundDelivery,status,severity,expectedWeight,actualWeight,validationConfidence,issueDescription",
-                $expand: "validationResults"
-            });
-
-            oHUBinding.requestContexts(0, 1).then(function (aContexts) {
-                if (!aContexts || aContexts.length === 0) {
-                    MessageBox.error("Handling Unit '" + sHuID + "' was not found.");
-                    oViewModel.setProperty("/busy", false);
-                    return;
-                }
-
-                var oHU = aContexts[0].getObject();
-
-                // Populate HU fields
-                oViewModel.setProperty("/huID",              oHU.huID);
-                oViewModel.setProperty("/delivery",          oHU.outboundDelivery);
-                oViewModel.setProperty("/status",            oHU.status);
-                oViewModel.setProperty("/severity",          oHU.severity);
-                oViewModel.setProperty("/expectedWeight",    oHU.expectedWeight);
-                oViewModel.setProperty("/actualWeight",      oHU.actualWeight);
-                oViewModel.setProperty("/validationConfidence", oHU.validationConfidence);
-                oViewModel.setProperty("/issueDescription",  oHU.issueDescription || "");
-
-                // Store UUID for action calls
-                this._sHUUUID = oHU.ID;
-
-                // Populate ValidationResult fields (first result)
-                var aVRs = oHU.validationResults || [];
-                if (aVRs.length > 0) {
-                    var oVR = aVRs[0];
-                    oViewModel.setProperty("/labelStatus",       oVR.labelStatus   || "");
-                    oViewModel.setProperty("/stackingCompliance",oVR.stackingCompliance);
-                    oViewModel.setProperty("/weightDelta",       oVR.weightDelta   || null);
-                    oViewModel.setProperty("/aiInsight",         oVR.aiInsight     || "");
-                    oViewModel.setProperty("/rootCause",         oVR.rootCause     || "");
-                    oViewModel.setProperty("/recommendedAction", oVR.recommendedAction || "");
-                } else {
-                    // No result yet: clear
-                    oViewModel.setProperty("/labelStatus",       "");
-                    oViewModel.setProperty("/stackingCompliance",null);
-                    oViewModel.setProperty("/weightDelta",       null);
-                    oViewModel.setProperty("/aiInsight",         "");
-                    oViewModel.setProperty("/rootCause",         "");
-                    oViewModel.setProperty("/recommendedAction", "");
-                }
-
-                oViewModel.setProperty("/busy", false);
-            }.bind(this)).catch(function (oError) {
-                oViewModel.setProperty("/busy", false);
-                MessageBox.error("Failed to load HU details: " + (oError.message || oError));
-            });
-        },
-
-        /* ============================================================
-         * Validate HU Action
-         * ============================================================ */
-
-        /**
-         * Calls the CAP `validateHU` action via fetch() (not ODataModel)
-         * because CAP bound/unbound actions with custom return structures
-         * are easiest to invoke via plain HTTP.
-         */
-        onValidate: function () {
+        _loadFromScanModel: function (sHuId, sDelivery, sWarehouse) {
             var oViewModel = this.getView().getModel("detailView");
-            var sHuID      = oViewModel.getProperty("/huID");
+            oViewModel.setProperty("/huId",             sHuId);
+            oViewModel.setProperty("/outboundDelivery", sDelivery);
+            oViewModel.setProperty("/warehouse",        sWarehouse);
 
-            if (!sHuID) {
-                MessageToast.show("No Handling Unit loaded.");
-                return;
-            }
+            try {
+                var oComp      = this.getOwnerComponent();
+                var oShared    = oComp && oComp.getModel("scanData");
+                if (oShared) {
+                    var aHUs = oShared.getProperty("/huResults") || [];
+                    var oHU  = aHUs.find(function (h) { return h.huId === sHuId; });
+                    if (oHU) {
+                        this._applyHUData(oHU, sDelivery, sWarehouse);
+                        // Also carry over exception resolution state
+                        var aExcs = oShared.getProperty("/exceptions") || [];
+                        var oExc  = aExcs.find(function (e) { return e.huId === sHuId; });
+                        if (oExc && oExc.resolutionAction) {
+                            oViewModel.setProperty("/resolutionAction", oExc.resolutionAction);
+                        }
+                        return;
+                    }
+                }
+            } catch (e) { /* silent */ }
+        },
 
-            oViewModel.setProperty("/busy", true);
-            MessageToast.show("Validating " + sHuID + "…");
+        _applyHUData: function (oHU, sDelivery, sWarehouse) {
+            var oVM = this.getView().getModel("detailView");
+            oVM.setProperty("/huId",             oHU.huId);
+            oVM.setProperty("/outboundDelivery", sDelivery);
+            oVM.setProperty("/warehouse",        sWarehouse);
+            oVM.setProperty("/storageBin",       oHU.storageBin       || "");
+            oVM.setProperty("/huStatus",         oHU.huStatus         || "");
+            oVM.setProperty("/expectedWeight",   oHU.expectedWeight   || 0);
+            oVM.setProperty("/actualWeight",     oHU.actualWeight     || 0);
+            oVM.setProperty("/weightUnit",       oHU.weightUnit       || "LB");
+            oVM.setProperty("/weightDelta",      oHU.weightDelta      || 0);
+            oVM.setProperty("/weightDeltaPct",   oHU.weightDeltaPct   || 0);
+            oVM.setProperty("/weightPassed",     !!oHU.weightPassed);
+            oVM.setProperty("/isBlocked",        !!oHU.isBlocked);
+            oVM.setProperty("/isClosed",         !!oHU.isClosed);
+            oVM.setProperty("/passed",           !!oHU.passed);
+            oVM.setProperty("/issue",            oHU.issue            || "");
+            oVM.setProperty("/exceptionType",    oHU.isBlocked ? "BLOCKED" : "WEIGHT");
+        },
 
-            fetch(SERVICE_BASE + "/validateHU", {
+        /* ─── AI Resolve ────────────────────────────────────────────── */
+
+        onResolveException: function () {
+            var oViewModel     = this.getView().getModel("detailView");
+            var sHuId          = oViewModel.getProperty("/huId");
+            var sWarehouse     = oViewModel.getProperty("/warehouse");
+            var sExceptionType = oViewModel.getProperty("/exceptionType") || "WEIGHT";
+
+            oViewModel.setProperty("/resolving", true);
+
+            fetch(BASE + "/resolveException", {
                 method:  "POST",
                 headers: { "Content-Type": "application/json" },
-                body:    JSON.stringify({ huID: sHuID })
+                body:    JSON.stringify({ huId: sHuId, warehouse: sWarehouse, exceptionType: sExceptionType })
             })
-            .then(function (oResponse) {
-                if (!oResponse.ok) {
-                    return oResponse.text().then(function (sText) {
-                        throw new Error("HTTP " + oResponse.status + ": " + sText);
-                    });
-                }
-                return oResponse.json();
-            })
+            .then(function (r) { return r.json(); })
             .then(function (oData) {
-                // CAP returns the result under `value` when called as an unbound action
-                var oResult = oData.value || oData;
-
-                oViewModel.setProperty("/busy", false);
-
-                // Update AI fields in the view model from the fresh result
-                if (oResult) {
-                    if (oResult.status)            { oViewModel.setProperty("/status",            oResult.status); }
-                    if (oResult.weightDelta != null){ oViewModel.setProperty("/weightDelta",       oResult.weightDelta); }
-                    if (oResult.aiInsight)         { oViewModel.setProperty("/aiInsight",         oResult.aiInsight); }
-                    if (oResult.rootCause)         { oViewModel.setProperty("/rootCause",         oResult.rootCause); }
-                    if (oResult.recommendedAction) { oViewModel.setProperty("/recommendedAction", oResult.recommendedAction); }
-                }
-
-                // Build result summary for dialog
-                var sMessage =
-                    "Status: " + (oResult.status || "—") + "\n" +
-                    "Passed: " + (oResult.passed ? "Yes" : "No") + "\n" +
-                    "Weight Delta: " + (oResult.weightDelta != null ? oResult.weightDelta + " kg" : "—") + "\n\n" +
-                    (oResult.message || "") +
-                    (oResult.aiInsight ? "\n\nAI Insight:\n" + oResult.aiInsight : "");
-
-                MessageBox.information(sMessage, {
-                    title:        "Validation Result — " + sHuID,
-                    styleClass:   "sapUiContentPadding",
-                    actions:      [MessageBox.Action.OK],
-                    onClose:      function () {
-                        // Reload the detail to pick up any persisted changes
-                        this._loadHUDetail(sHuID);
-                    }.bind(this)
-                });
-            }.bind(this))
-            .catch(function (oError) {
-                oViewModel.setProperty("/busy", false);
-                MessageBox.error("Validation failed: " + oError.message, {
-                    title: "Error"
-                });
+                var v = oData.value || oData;
+                oViewModel.setProperty("/resolving",        false);
+                oViewModel.setProperty("/resolutionAction", v.resolutionAction || "Resolved.");
+                MessageToast.show("AI resolution ready.");
+            })
+            .catch(function (oErr) {
+                oViewModel.setProperty("/resolving", false);
+                MessageBox.error("Resolve failed: " + oErr.message);
             });
         },
 
-        /* ============================================================
-         * AI Copilot Chat
-         * ============================================================ */
+        /* ─── AI Chat ───────────────────────────────────────────────── */
 
-        /**
-         * Send button / Enter key handler.
-         * Posts the user message to the `chat` CAP action and appends
-         * both the user message and the AI reply to the chat JSONModel.
-         */
         onSendChat: function () {
-            var oViewModel  = this.getView().getModel("detailView");
-            var oChatModel  = this.getView().getModel("chat");
-            var sMessage    = (oViewModel.getProperty("/chatMessage") || "").trim();
+            var oViewModel = this.getView().getModel("detailView");
+            var sMsg       = (oViewModel.getProperty("/chatMessage") || "").trim();
+            if (!sMsg) { return; }
 
-            if (!sMessage) { return; }
-
-            // Append user message
-            this._appendChatMessage("user", sMessage);
+            this._appendChat("user", sMsg);
             oViewModel.setProperty("/chatMessage", "");
             oViewModel.setProperty("/chatBusy",    true);
 
-            // Build context string from current view model
-            var sHuContext = this._buildHuContext(oViewModel);
+            var sContext = this._buildContext(oViewModel);
 
-            fetch(SERVICE_BASE + "/chat", {
+            fetch(BASE + "/chat", {
                 method:  "POST",
                 headers: { "Content-Type": "application/json" },
-                body:    JSON.stringify({ message: sMessage, huContext: sHuContext })
+                body:    JSON.stringify({ message: sMsg, context: sContext })
             })
-            .then(function (oResponse) {
-                if (!oResponse.ok) {
-                    return oResponse.text().then(function (sText) {
-                        throw new Error("HTTP " + oResponse.status + ": " + sText);
-                    });
-                }
-                return oResponse.json();
-            })
+            .then(function (r) { return r.json(); })
             .then(function (oData) {
-                var oResult = oData.value || oData;
-                var sReply  = (oResult && oResult.reply) ? oResult.reply : "I could not generate a response. Please try again.";
-                var bAI     = oResult && oResult.aiPowered;
-
-                this._appendChatMessage("agent", sReply + (bAI ? " [AI]" : ""));
+                var v = oData.value || oData;
+                this._appendChat("agent", v.reply || "AI unavailable.");
                 oViewModel.setProperty("/chatBusy", false);
-                this._scrollChatToBottom();
             }.bind(this))
-            .catch(function (oError) {
-                this._appendChatMessage("agent", "Sorry, I encountered an error: " + oError.message);
+            .catch(function (oErr) {
+                this._appendChat("agent", "Error: " + oErr.message);
                 oViewModel.setProperty("/chatBusy", false);
             }.bind(this));
         },
 
-        /**
-         * Suggestion chip press handler — fills the message from the button text
-         * and fires onSendChat.
-         * @param {sap.ui.base.Event} oEvent
-         */
-        onSuggestionPress: function (oEvent) {
+        onSuggestion: function (oEvent) {
             var sText = oEvent.getSource().getText();
-            var oViewModel = this.getView().getModel("detailView");
-            oViewModel.setProperty("/chatMessage", sText);
+            this.getView().getModel("detailView").setProperty("/chatMessage", sText);
             this.onSendChat();
         },
 
-        /* ============================================================
-         * Navigation
-         * ============================================================ */
+        /* ─── Navigation ────────────────────────────────────────────── */
 
         onNavBack: function () {
-            var oRouter = UIComponent.getRouterFor(this);
-            oRouter.navTo("worklist", {}, true /* replace history */);
+            var oViewModel = this.getView().getModel("detailView");
+            UIComponent.getRouterFor(this).navTo("scan", {
+                delivery:  encodeURIComponent(oViewModel.getProperty("/outboundDelivery")),
+                warehouse: encodeURIComponent(oViewModel.getProperty("/warehouse"))
+            }, true);
         },
 
-        /* ============================================================
-         * Private helpers
-         * ============================================================ */
+        /* ─── Helpers ───────────────────────────────────────────────── */
 
-        /**
-         * Appends a message object to the chat JSONModel.
-         * @param {string} sRole   "user" | "agent"
-         * @param {string} sText   Message text
-         * @private
-         */
-        _appendChatMessage: function (sRole, sText) {
+        _appendChat: function (sRole, sText) {
             var oChatModel = this.getView().getModel("chat");
             var aMessages  = oChatModel.getProperty("/messages") || [];
-            aMessages.push({
-                role:      sRole,
-                text:      sText,
-                timestamp: this._now()
-            });
+            aMessages.push({ role: sRole, text: sText, timestamp: this._now() });
             oChatModel.setProperty("/messages", aMessages);
         },
 
-        /**
-         * Builds a compact context string describing the current HU for inclusion
-         * in the chat prompt sent to the backend.
-         * @param {sap.ui.model.json.JSONModel} oVM
-         * @returns {string}
-         * @private
-         */
-        _buildHuContext: function (oVM) {
-            return [
-                "HU=" + oVM.getProperty("/huID"),
-                "Delivery=" + oVM.getProperty("/delivery"),
-                "Status=" + oVM.getProperty("/status"),
-                "Severity=" + oVM.getProperty("/severity"),
-                "ExpectedWeight=" + oVM.getProperty("/expectedWeight"),
-                "ActualWeight=" + oVM.getProperty("/actualWeight"),
-                "LabelStatus=" + oVM.getProperty("/labelStatus"),
-                "Stacking=" + oVM.getProperty("/stackingCompliance"),
-                "RootCause=" + oVM.getProperty("/rootCause")
-            ].join("; ");
+        _buildContext: function (oVM) {
+            return "HU=" + oVM.getProperty("/huId") +
+                "; Delivery=" + oVM.getProperty("/outboundDelivery") +
+                "; Warehouse=" + oVM.getProperty("/warehouse") +
+                "; Status=" + (oVM.getProperty("/passed") ? "PASSED" : "FAILED") +
+                "; Expected=" + oVM.getProperty("/expectedWeight") +
+                "; Actual=" + oVM.getProperty("/actualWeight") +
+                "; Blocked=" + oVM.getProperty("/isBlocked") +
+                "; Issue=" + oVM.getProperty("/issue");
         },
 
-        /**
-         * Scrolls the chat list to the bottom after new messages are appended.
-         * @private
-         */
-        _scrollChatToBottom: function () {
-            var oChatList = this.byId("chatList");
-            if (oChatList) {
-                var oDomRef = oChatList.getDomRef();
-                if (oDomRef) {
-                    oDomRef.scrollTop = oDomRef.scrollHeight;
-                }
-            }
-        },
-
-        /**
-         * Returns the current time as a locale-formatted string.
-         * @returns {string}
-         * @private
-         */
         _now: function () {
             return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         }

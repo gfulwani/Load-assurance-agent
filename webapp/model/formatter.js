@@ -3,53 +3,110 @@ sap.ui.define([], function () {
 
     return {
 
-        /**
-         * Returns a ValueState string based on the HU validation status.
-         * @param {string} sStatus  "Passed" | "Failed" | "Review" | undefined
-         * @returns {string} sap.ui.core.ValueState
-         */
-        statusState: function (sStatus) {
+        /* ─── Dispatch status ───────────────────────────────────────── */
+
+        dispatchState: function (sStatus) {
+            switch (sStatus) {
+                case "APPROVED": return "Success";
+                case "BLOCKED":  return "Error";
+                case "REVIEW":   return "Warning";
+                default:         return "Warning";
+            }
+        },
+
+        dispatchIcon: function (sStatus) {
+            switch (sStatus) {
+                case "APPROVED": return "sap-icon://accept";
+                case "BLOCKED":  return "sap-icon://error";
+                case "REVIEW":   return "sap-icon://pending";
+                default:         return "sap-icon://pending";
+            }
+        },
+
+        verdictStripType: function (sStatus) {
+            switch (sStatus) {
+                case "APPROVED": return "Success";
+                case "BLOCKED":  return "Error";
+                case "REVIEW":   return "Warning";
+                default:         return "Warning";
+            }
+        },
+
+        /* ─── HU status (3-tier: Passed / Review / Failed) ─────────── */
+
+        huStatusState: function (sStatus) {
             switch (sStatus) {
                 case "Passed": return "Success";
-                case "Failed": return "Error";
                 case "Review": return "Warning";
+                case "Failed": return "Error";
                 default:       return "None";
             }
         },
 
-        /**
-         * Returns a MessageStrip / highlight indicator value for list rows.
-         * @param {string} sStatus
-         * @returns {string} sap.ui.core.IndicationColor or ValueState string for highlight
-         */
-        statusHighlight: function (sStatus) {
-            switch (sStatus) {
-                case "Passed": return "Success";
-                case "Failed": return "Error";
-                case "Review": return "Warning";
-                default:       return "None";
-            }
-        },
-
-        /**
-         * Returns an sap-icon URI for each status.
-         * @param {string} sStatus
-         * @returns {string}
-         */
-        statusIcon: function (sStatus) {
+        huStatusIcon: function (sStatus) {
             switch (sStatus) {
                 case "Passed": return "sap-icon://accept";
+                case "Review": return "sap-icon://pending";
                 case "Failed": return "sap-icon://error";
-                case "Review": return "sap-icon://warning";
-                default:       return "sap-icon://status-inactive";
+                default:       return "sap-icon://question-mark";
             }
         },
 
-        /**
-         * Returns a ValueState based on severity level.
-         * @param {string} sSeverity  "Critical" | "High" | "Medium" | "Low"
-         * @returns {string} sap.ui.core.ValueState
-         */
+        huHighlight: function (sStatus) {
+            switch (sStatus) {
+                case "Passed": return "Success";
+                case "Review": return "Warning";
+                case "Failed": return "Error";
+                default:       return "None";
+            }
+        },
+
+        // Legacy — kept for backward compat with any existing bindings
+        huPassedState: function (bPassed, bBlocked) {
+            if (bBlocked) return "Warning";
+            return bPassed ? "Success" : "Error";
+        },
+        huPassedText: function (bPassed, bBlocked) {
+            if (bBlocked) return "Blocked";
+            return bPassed ? "Passed" : "Failed";
+        },
+        huPassedIcon: function (bPassed, bBlocked) {
+            if (bBlocked) return "sap-icon://alert";
+            return bPassed ? "sap-icon://accept" : "sap-icon://error";
+        },
+
+        /* ─── Label status ──────────────────────────────────────────── */
+
+        labelStatusState: function (sLabel) {
+            switch ((sLabel || "OK").toUpperCase()) {
+                case "OK":      return "Success";
+                case "DAMAGED": return "Warning";
+                case "MISSING": return "Error";
+                default:        return "None";
+            }
+        },
+
+        labelStatusIcon: function (sLabel) {
+            switch ((sLabel || "OK").toUpperCase()) {
+                case "OK":      return "sap-icon://accept";
+                case "DAMAGED": return "sap-icon://alert";
+                case "MISSING": return "sap-icon://decline";
+                default:        return "sap-icon://question-mark";
+            }
+        },
+
+        /* ─── Stacking compliance ───────────────────────────────────── */
+
+        stackingState: function (bCompliant) {
+            return bCompliant === false ? "Warning" : "Success";
+        },
+
+        stackingText: function (bCompliant) {
+            return bCompliant === false ? "Non-Compliant" : "Compliant";
+        },
+
+        /* ─── Severity ──────────────────────────────────────────────── */
+
         severityState: function (sSeverity) {
             switch (sSeverity) {
                 case "Critical": return "Error";
@@ -60,85 +117,97 @@ sap.ui.define([], function () {
             }
         },
 
-        /**
-         * Computes the weight delta as a formatted percentage string, e.g. "+3.2%" or "-1.0%".
-         * @param {number} nExpected
-         * @param {number} nActual
-         * @returns {string}
-         */
-        weightDeltaText: function (nExpected, nActual) {
-            if (nExpected == null || nActual == null || nExpected === 0) {
-                return "N/A";
-            }
-            var fDeltaPct = ((nActual - nExpected) / nExpected) * 100;
-            var sSign = fDeltaPct >= 0 ? "+" : "";
-            return sSign + fDeltaPct.toFixed(1) + "%";
-        },
+        /* ─── Weight delta ──────────────────────────────────────────── */
 
-        /**
-         * Returns the raw numeric delta percentage for ObjectNumber binding.
-         * @param {number} nExpected
-         * @param {number} nActual
-         * @returns {number|null}
-         */
         weightDeltaNumber: function (nExpected, nActual) {
-            if (nExpected == null || nActual == null || nExpected === 0) {
-                return null;
-            }
+            if (nExpected == null || nActual == null || nExpected === 0) return null;
             return parseFloat(((nActual - nExpected) / nExpected * 100).toFixed(2));
         },
 
-        /**
-         * Returns a ValueState based on the magnitude of the weight delta.
-         * ±5 % threshold: >5% → Error, >2% → Warning, else → Success.
-         * @param {number} nExpected
-         * @param {number} nActual
-         * @returns {string}
-         */
         weightDeltaState: function (nExpected, nActual) {
-            if (nExpected == null || nActual == null || nExpected === 0) {
-                return "None";
-            }
-            var fAbsPct = Math.abs((nActual - nExpected) / nExpected * 100);
-            if (fAbsPct > 5)  { return "Error"; }
-            if (fAbsPct > 2)  { return "Warning"; }
+            if (nExpected == null || nActual == null || nExpected === 0) return "None";
+            var fAbs = Math.abs((nActual - nExpected) / nExpected * 100);
+            if (fAbs > 5) return "Error";
+            if (fAbs > 2) return "Warning";
             return "Success";
         },
 
-        /**
-         * Maps label scan status to ValueState.
-         * @param {string} sLabelStatus  "OK" | "Missing" | "Damaged"
-         * @returns {string}
-         */
-        labelStatusState: function (sLabelStatus) {
-            switch (sLabelStatus) {
-                case "OK":      return "Success";
-                case "Damaged": return "Warning";
-                case "Missing": return "Error";
-                default:        return "None";
+        weightDeltaText: function (nExpected, nActual) {
+            if (nExpected == null || nActual == null || nExpected === 0) return "N/A";
+            var fDelta = (nActual - nExpected) / nExpected * 100;
+            return (fDelta >= 0 ? "+" : "") + fDelta.toFixed(2) + "%";
+        },
+
+        /* ─── Exception ─────────────────────────────────────────────── */
+
+        exceptionIcon: function (sType) {
+            switch (sType) {
+                case "BLOCKED":  return "sap-icon://locked";
+                case "WEIGHT":   return "sap-icon://scale";
+                case "LABEL":    return "sap-icon://tag";
+                case "STACKING": return "sap-icon://stack-alert";
+                case "CLOSED":   return "sap-icon://cancel";
+                default:         return "sap-icon://alert";
             }
         },
 
-        /**
-         * Converts a boolean compliance flag to a human-readable string.
-         * @param {boolean} bValue
-         * @returns {string}
-         */
-        booleanText: function (bValue) {
-            if (bValue === true)  { return "Compliant"; }
-            if (bValue === false) { return "Non-Compliant"; }
-            return "Unknown";
+        exceptionColor: function (sType) {
+            return (sType === "BLOCKED" || sType === "CLOSED") ? "red" : "orange";
         },
 
-        /**
-         * Converts a boolean compliance flag to a ValueState.
-         * @param {boolean} bValue
-         * @returns {string}
-         */
-        booleanState: function (bValue) {
-            if (bValue === true)  { return "Success"; }
-            if (bValue === false) { return "Error"; }
-            return "None";
+        exceptionState: function (sType) {
+            return (sType === "BLOCKED" || sType === "CLOSED") ? "Error" : "Warning";
+        },
+
+        /* ─── History / worklist ────────────────────────────────────── */
+
+        statusState: function (sStatus) {
+            switch (sStatus) {
+                case "APPROVED": return "Success";
+                case "BLOCKED":  return "Error";
+                case "REVIEW":   return "Warning";
+                default:         return "Warning";
+            }
+        },
+
+        statusHighlight: function (sStatus) {
+            switch (sStatus) {
+                case "APPROVED": return "Success";
+                case "BLOCKED":  return "Error";
+                case "REVIEW":   return "Warning";
+                default:         return "Information";
+            }
+        },
+
+        /* ─── Misc ──────────────────────────────────────────────────── */
+
+        confidencePct: function (nPassed, nTotal) {
+            if (!nTotal) return "—";
+            return (nPassed / nTotal * 100).toFixed(1) + "%";
+        },
+
+        booleanText: function (bValue) {
+            if (bValue === true)  return "Yes";
+            if (bValue === false) return "No";
+            return "—";
+        },
+
+        dateText: function (sDate) {
+            if (!sDate) return "";
+            try { return new Date(sDate).toLocaleString(); } catch (e) { return sDate; }
+        },
+
+        timeAgo: function (sDate) {
+            if (!sDate) return "—";
+            try {
+                var d = new Date(sDate);
+                if (isNaN(d.getTime())) return "—";
+                var sec = Math.floor((Date.now() - d.getTime()) / 1000);
+                if (sec < 60)  return "just now";
+                if (sec < 3600) return Math.floor(sec / 60) + " min ago";
+                if (sec < 86400) return Math.floor(sec / 3600) + " hr ago";
+                return d.toLocaleDateString();
+            } catch (e) { return sDate; }
         }
     };
 });

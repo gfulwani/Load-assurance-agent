@@ -1,0 +1,846 @@
+<mvc:View
+    controllerName="com.loadassurance.agent.controller.Scan"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core"
+    xmlns:layout="sap.ui.layout"
+    xmlns:customData="http://schemas.sap.com/sapui5/extension/sap.ui.core.CustomData/1"
+    displayBlock="true">
+    <Page
+        id="scanPage"
+        title="Scan Result — {scanView>/outboundDelivery}"
+        showNavButton="true"
+        navButtonPress=".onNavBack"
+        busy="{scanView>/busy}"
+        busyIndicatorDelay="0">
+
+        <!-- ═══ Sub-header: KPI strip ═════════════════════════════════ -->
+        <subHeader>
+            <Bar>
+                <contentLeft>
+                    <ObjectNumber
+                        number="{scanView>/totalHUs}"
+                        unit="HUs"
+                        emphasized="true" />
+                    <core:Icon src="sap-icon://accept" color="green" class="sapUiSmallMarginBegin sapUiSmallMarginEnd" />
+                    <ObjectNumber
+                        number="{scanView>/passedHUs}"
+                        unit="Passed"
+                        state="Success" />
+                    <core:Icon src="sap-icon://pending" color="orange" class="sapUiSmallMarginBegin sapUiSmallMarginEnd" />
+                    <ObjectNumber
+                        number="{scanView>/reviewHUs}"
+                        unit="Review"
+                        state="Warning" />
+                    <core:Icon src="sap-icon://error" color="red" class="sapUiSmallMarginBegin sapUiSmallMarginEnd" />
+                    <ObjectNumber
+                        number="{scanView>/failedHUs}"
+                        unit="Failed"
+                        state="Error" />
+                    <core:Icon src="sap-icon://alert" color="darkred" class="sapUiSmallMarginBegin sapUiSmallMarginEnd" />
+                    <ObjectNumber
+                        number="{scanView>/blockedHUs}"
+                        unit="Blocked"
+                        state="Warning" />
+                </contentLeft>
+                <contentRight>
+                    <ObjectStatus
+                        id="dispatchStatusKPI"
+                        text="{scanView>/dispatchStatus}"
+                        state="{
+                            path: 'scanView>/dispatchStatus',
+                            formatter: '.formatter.dispatchState'
+                        }"
+                        icon="{
+                            path: 'scanView>/dispatchStatus',
+                            formatter: '.formatter.dispatchIcon'
+                        }"
+                        inverted="true" />
+                </contentRight>
+            </Bar>
+        </subHeader>
+
+        <!-- ═══ Header Toolbar: action buttons ══════════════════════════ -->
+        <headerContent>
+            <OverflowToolbar style="Clear">
+                <Button
+                    id="btnRescan"
+                    text="Re-scan"
+                    icon="sap-icon://refresh"
+                    type="Default"
+                    press=".onReScan"
+                    class="sapUiSmallMarginEnd" />
+                <Button
+                    id="btnScanPallet"
+                    text="Scan Pallet"
+                    icon="sap-icon://camera"
+                    type="Default"
+                    press=".onScanPallet"
+                    class="sapUiSmallMarginEnd"
+                    tooltip="Take a photo of the pallet — NVIDIA Vision AI will read the HU label and assess condition"
+                    enabled="{= !!${scanView>/outboundDelivery} }" />
+                <!-- Hidden file input — triggers camera on mobile, file browser on desktop -->
+                <core:HTML
+                    id="palletImageInput"
+                    content="&lt;input type='file' id='palletFileInput' accept='image/*' capture='environment' style='display:none'/&gt;" />
+                <ToolbarSpacer />
+                <Button
+                    id="btnApprove"
+                    text="Approve"
+                    type="Accept"
+                    icon="sap-icon://accept"
+                    press=".onApproveDispatch"
+                    visible="{= ${scanView>/dispatchStatus} !== 'APPROVED' }" />
+                <Button
+                    id="btnBlock"
+                    text="Block"
+                    type="Reject"
+                    icon="sap-icon://decline"
+                    press=".onBlockDispatch" />
+                <Button
+                    id="btnPostGI"
+                    text="Post Goods Issue"
+                    type="Emphasized"
+                    icon="sap-icon://shipping-status"
+                    press=".onPostGoodsIssue"
+                    visible="{= ${scanView>/dispatchStatus} === 'APPROVED' }"
+                    enabled="{= !${scanView>/giPosted} }" />
+                <Button
+                    id="btnConfirmLoading"
+                    text="Confirm Loading Complete"
+                    type="Emphasized"
+                    icon="sap-icon://complete"
+                    press=".onConfirmLoading"
+                    visible="{= ${scanView>/dispatchStatus} === 'APPROVED' }"
+                    enabled="{= !${scanView>/loadingConfirmed} }"
+                    tooltip="Mark loading as complete in EWM — triggers GI and activates loading" />
+            </OverflowToolbar>
+        </headerContent>
+
+        <content>
+            <VBox class="sapUiSmallMargin" width="100%">
+
+                <!-- GI Error strip (shown on GI failure) -->
+                <MessageStrip
+                    id="giErrorStrip"
+                    text="{scanView>/giError}"
+                    type="Error"
+                    showIcon="true"
+                    showCloseButton="true"
+                    class="sapUiSmallMarginBottom"
+                    visible="{= !!${scanView>/giError} }" />
+
+                <!-- ════════════════════════════════════════════════════════ -->
+                <!-- SCREEN 1 — DISPATCH APPROVED (failureType = NONE, dispatch.complete) -->
+                <!-- ════════════════════════════════════════════════════════ -->
+                <Panel
+                    id="screenApproved"
+                    visible="{= ${scanView>/dispatchStatus} === 'APPROVED' }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <VBox class="sapUiMediumMargin">
+                            <Title text="DISPATCH APPROVED" level="H2" class="sapUiSmallMarginBottom"
+                                   titleStyle="H2" />
+                            <HBox alignItems="Center" class="sapUiSmallMarginBottom">
+                                <core:Icon src="sap-icon://accept" color="green" size="1.5rem" class="sapUiSmallMarginEnd" />
+                                <Text text="{= ${scanView>/dispatch/step3_giPosted} ? 'All validations passed. Goods Issue posted in EWM.' : 'Dispatch approved. Goods Issue not yet posted.' }" wrapping="true" />
+                            </HBox>
+
+                            <!-- EWM Step Checklist -->
+                            <VBox class="sapUiSmallMarginBottom">
+                                <HBox alignItems="Center" class="sapUiTinyMarginBottom">
+                                    <core:Icon
+                                        src="{= ${scanView>/dispatch/step1_shippingReady} ? 'sap-icon://accept' : 'sap-icon://pending' }"
+                                        color="{= ${scanView>/dispatch/step1_shippingReady} ? 'green' : 'grey' }"
+                                        class="sapUiSmallMarginEnd" />
+                                    <Text text="{= ${scanView>/dispatch/step1_shippingReady} ? 'Shipping Readiness Set' : 'Shipping Readiness — Pending' }" />
+                                </HBox>
+                                <HBox alignItems="Center" class="sapUiTinyMarginBottom">
+                                    <core:Icon
+                                        src="{= ${scanView>/dispatch/step2_loadingActivated} ? 'sap-icon://accept' : 'sap-icon://pending' }"
+                                        color="{= ${scanView>/dispatch/step2_loadingActivated} ? 'green' : 'grey' }"
+                                        class="sapUiSmallMarginEnd" />
+                                    <Text text="{= ${scanView>/dispatch/step2_loadingActivated} ? 'Loading Activated — RF task sent to operator gun' : 'Loading Activation — Pending' }" />
+                                </HBox>
+                                <HBox alignItems="Center" class="sapUiTinyMarginBottom">
+                                    <core:Icon
+                                        src="{= ${scanView>/loadingConfirmed} ? 'sap-icon://accept' : 'sap-icon://pending' }"
+                                        color="{= ${scanView>/loadingConfirmed} ? 'green' : 'grey' }"
+                                        class="sapUiSmallMarginEnd" />
+                                    <Text text="{= ${scanView>/loadingConfirmed} ? 'Loading Confirmed Complete' : 'Loading Confirmation — Pending' }" />
+                                </HBox>
+                                <HBox alignItems="Center" class="sapUiTinyMarginBottom">
+                                    <core:Icon
+                                        src="{= ${scanView>/dispatch/step3_giPosted} ? 'sap-icon://accept' : 'sap-icon://pending' }"
+                                        color="{= ${scanView>/dispatch/step3_giPosted} ? 'green' : 'grey' }"
+                                        class="sapUiSmallMarginEnd" />
+                                    <Text text="{= ${scanView>/dispatch/step3_giPosted} ? 'Goods Issue Posted' : 'Goods Issue — Pending' }" />
+                                </HBox>
+                            </VBox>
+
+                            <HBox alignItems="Center" class="sapUiSmallMarginBottom"
+                                  visible="{= !!${scanView>/dispatch/step3_giPosted} }">
+                                <core:Icon src="sap-icon://shipping-status" color="green" size="1.2rem" class="sapUiSmallMarginEnd" />
+                                <Text text="Vehicle cleared for departure" class="sapUiSmallText" />
+                            </HBox>
+
+                            <Text text="{scanView>/aiSummary}" wrapping="true" class="sapUiSmallText sapUiSmallMarginBottom" />
+                            <Button text="New Scan" icon="sap-icon://refresh" press=".onReScan" type="Emphasized" />
+                        </VBox>
+                    </content>
+                </Panel>
+
+                <!-- ════════════════════════════════════════════════════════ -->
+                <!-- SCREEN 2 — WRONG PALLET (failureType = OBD_MISMATCH)   -->
+                <!-- ════════════════════════════════════════════════════════ -->
+                <Panel
+                    id="screenWrongPallet"
+                    visible="{= ${scanView>/failureType} === 'OBD_MISMATCH' }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <VBox class="sapUiMediumMargin">
+                            <Title text="WRONG PALLET DETECTED" level="H2"
+                                   titleStyle="H2" class="sapUiSmallMarginBottom" />
+                            <MessageStrip
+                                text="This HU does not belong to the scanned delivery. Follow the steps below."
+                                type="Error" showIcon="true" showCloseButton="false"
+                                class="sapUiSmallMarginBottom" />
+
+                            <!-- EWM Auto-Actions -->
+                            <Label text="EWM ACTIONS TAKEN AUTOMATICALLY:" design="Bold" class="sapUiTinyMarginBottom" />
+                            <HBox alignItems="Center" class="sapUiTinyMarginBottom">
+                                <core:Icon
+                                    src="{= ${scanView>/wrongPallet/reversalDone} ? 'sap-icon://accept' : 'sap-icon://error' }"
+                                    color="{= ${scanView>/wrongPallet/reversalDone} ? 'green' : 'red' }"
+                                    class="sapUiSmallMarginEnd" />
+                                <Text text="{= ${scanView>/wrongPallet/reversalDone} ? 'Shipping readiness reversed — delivery reset in EWM' : 'Shipping readiness reversal failed — do manually in SAP' }" wrapping="true" />
+                            </HBox>
+                            <HBox alignItems="Center" class="sapUiTinyMarginBottom">
+                                <core:Icon
+                                    src="{= ${scanView>/wrongPallet/wtCreated} ? 'sap-icon://accept' : 'sap-icon://error' }"
+                                    color="{= ${scanView>/wrongPallet/wtCreated} ? 'green' : 'orange' }"
+                                    class="sapUiSmallMarginEnd" />
+                                <Text text="{= ${scanView>/wrongPallet/wtCreated} ? 'Return WT ' + ${scanView>/wrongPallet/wtNumber} + ' sent to RF gun automatically' : 'WT creation failed — follow manual steps below' }" wrapping="true" />
+                            </HBox>
+
+                            <!-- Manual Steps Checklist -->
+                            <Label text="MANUAL STEPS REQUIRED IN SAP:" design="Bold"
+                                   class="sapUiSmallMarginTop sapUiTinyMarginBottom" />
+                            <List
+                                items="{scanView>/wrongPalletSteps}"
+                                showSeparators="None">
+                                <CheckBox
+                                    selected="{scanView>done}"
+                                    text="{scanView>text}"
+                                    wrapping="true"
+                                    class="sapUiTinyMarginBottom" />
+                            </List>
+
+                            <Text text="{scanView>/aiSummary}" wrapping="true" class="sapUiSmallText sapUiSmallMarginTop sapUiSmallMarginBottom" />
+                            <Button text="New Scan (after fix)" icon="sap-icon://refresh" press=".onReScan" type="Emphasized" />
+                        </VBox>
+                    </content>
+                </Panel>
+
+                <!-- ════════════════════════════════════════════════════════ -->
+                <!-- SCREEN 3 — WEIGHT / LABEL / STACKING FAIL              -->
+                <!-- ════════════════════════════════════════════════════════ -->
+                <Panel
+                    id="screenValidationFail"
+                    visible="{= ${scanView>/failureType} !== 'NONE' &amp;&amp; ${scanView>/failureType} !== 'OBD_MISMATCH' &amp;&amp; ${scanView>/failureType} !== 'REVIEW' &amp;&amp; !!${scanView>/failureType} &amp;&amp; ${scanView>/dispatchStatus} !== 'APPROVED' }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <VBox class="sapUiMediumMargin">
+                            <Title text="VALIDATION FAILED" level="H2" titleStyle="H2" class="sapUiSmallMarginBottom" />
+                            <MessageStrip
+                                text="{scanView>/verdictText}"
+                                type="Error" showIcon="true" showCloseButton="false"
+                                class="sapUiSmallMarginBottom" />
+                            <MessageStrip
+                                text="HU stays at GI-ZONE — no EWM action taken. Fix the issue and re-scan."
+                                type="Information" showIcon="true" showCloseButton="false"
+                                class="sapUiSmallMarginBottom" />
+
+                            <!-- HU Weight Details -->
+                            <VBox class="sapUiSmallMarginBottom" visible="{= ${scanView>/totalHUs} > 0 }">
+                                <Label text="Validation Details:" design="Bold" class="sapUiTinyMarginBottom" />
+                                <List items="{scanView>/huResults}" showSeparators="None">
+                                    <ColumnListItem>
+                                        <cells>
+                                            <ObjectStatus
+                                                text="{scanView>huId}"
+                                                state="{= ${scanView>passed} ? 'Success' : 'Error' }" />
+                                            <Text text="{scanView>issue}" wrapping="true" />
+                                        </cells>
+                                    </ColumnListItem>
+                                </List>
+                            </VBox>
+
+                            <Text text="{scanView>/aiSummary}" wrapping="true" class="sapUiSmallText sapUiSmallMarginBottom" />
+
+                            <HBox>
+                                <Button text="Re-scan After Fix" icon="sap-icon://refresh" press=".onReScan" type="Emphasized" class="sapUiSmallMarginEnd" />
+                            </HBox>
+                        </VBox>
+                    </content>
+                </Panel>
+
+                <!-- ════════════════════════════════════════════════════════ -->
+                <!-- SCREEN 4 — REVIEW REQUIRED                             -->
+                <!-- ════════════════════════════════════════════════════════ -->
+                <Panel
+                    id="screenReview"
+                    visible="{= ${scanView>/dispatchStatus} === 'REVIEW' }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <VBox class="sapUiMediumMargin">
+                            <Title text="MANUAL REVIEW REQUIRED" level="H2" titleStyle="H2" class="sapUiSmallMarginBottom" />
+                            <MessageStrip
+                                text="Do NOT load yet — supervisor verification needed."
+                                type="Warning" showIcon="true" showCloseButton="false"
+                                class="sapUiSmallMarginBottom" />
+                            <Text text="{scanView>/aiSummary}" wrapping="true" class="sapUiSmallMarginBottom" />
+
+                            <HBox wrap="Wrap">
+                                <Button text="Re-scan" icon="sap-icon://refresh" press=".onReScan" type="Default" class="sapUiSmallMarginEnd sapUiTinyMarginBottom" />
+                                <Button text="Approve" icon="sap-icon://accept" press=".onApproveDispatch" type="Accept" class="sapUiSmallMarginEnd sapUiTinyMarginBottom" />
+                                <Button text="Block" icon="sap-icon://decline" press=".onBlockDispatch" type="Reject" class="sapUiSmallMarginEnd sapUiTinyMarginBottom" />
+                            </HBox>
+                        </VBox>
+                    </content>
+                </Panel>
+
+                <!-- ─── AI Summary (PENDING state — not yet scanned) ──────── -->
+                <Panel
+                    headerText="AI Agent Analysis"
+                    expandable="true"
+                    expanded="true"
+                    class="sapUiSmallMarginBottom"
+                    visible="{= ${scanView>/dispatchStatus} === 'PENDING' &amp;&amp; !!${scanView>/aiSummary} }">
+                    <content>
+                        <VBox class="sapUiSmallMargin">
+                            <Text text="{scanView>/aiSummary}" wrapping="true" />
+                        </VBox>
+                    </content>
+                </Panel>
+
+                <!-- ─── HU Results Table ────────────────────────────── -->
+                <Table
+                    id="huTable"
+                    items="{scanView>/huResults}"
+                    busyIndicatorDelay="0"
+                    class="sapUiSmallMarginBottom"
+                    noDataText="No HU results available.">
+
+                    <headerToolbar>
+                        <OverflowToolbar>
+                            <Title
+                                text="Handling Units ({scanView>/totalHUs})"
+                                level="H4"
+                                titleStyle="H4" />
+                            <ToolbarSpacer />
+                            <Button
+                                text="Re-validate with entered weights"
+                                icon="sap-icon://accept"
+                                type="Emphasized"
+                                press=".onRevalidateWeights"
+                                tooltip="Re-run validation using the actual weights you entered below" />
+                            <SearchField
+                                width="13rem"
+                                placeholder="Search HU ID…"
+                                liveChange=".onFilterHUs" />
+                        </OverflowToolbar>
+                    </headerToolbar>
+
+                    <columns>
+                        <Column width="12rem"><Text text="HU ID" /></Column>
+                        <Column width="9rem"><Text text="Status" /></Column>
+                        <Column width="8rem" hAlign="Center"><Text text="Storage Bin" /></Column>
+                        <Column width="10rem" hAlign="End"><Text text="Expected Weight" /></Column>
+                        <Column width="11rem" hAlign="End"><Text text="Actual Weight" /></Column>
+                        <Column width="10rem" hAlign="End"><Text text="Delta (%)" /></Column>
+                        <Column width="8rem" hAlign="Center"><Text text="Label" /></Column>
+                        <Column width="9rem" hAlign="Center"><Text text="Stacking" /></Column>
+                        <Column minScreenWidth="Tablet" demandPopin="true"><Text text="Issue" /></Column>
+                        <Column width="7rem" hAlign="Center"><Text text="" /></Column>
+                    </columns>
+
+                    <items>
+                        <ColumnListItem
+                            type="Active"
+                            press=".onHUPress"
+                            highlight="{
+                                path: 'scanView>status',
+                                formatter: '.formatter.huHighlight'
+                            }">
+                            <cells>
+                                <ObjectIdentifier
+                                    title="{scanView>huId}"
+                                    titleActive="true"
+                                    titlePress=".onHUPress" />
+                                <ObjectStatus
+                                    text="{scanView>status}"
+                                    state="{
+                                        path: 'scanView>status',
+                                        formatter: '.formatter.huStatusState'
+                                    }"
+                                    icon="{
+                                        path: 'scanView>status',
+                                        formatter: '.formatter.huStatusIcon'
+                                    }" />
+                                <Text text="{scanView>storageBin}" />
+                                <HBox hAlign="End" alignItems="Center">
+                                    <ObjectNumber
+                                        number="{
+                                            path: 'scanView>expectedWeight',
+                                            type: 'sap.ui.model.type.Float',
+                                            formatOptions: { maxFractionDigits: 3, minFractionDigits: 3 }
+                                        }"
+                                        unit="{scanView>weightUnit}"
+                                        hAlign="End"
+                                        visible="{= ${scanView>expectedWeight} > 0 }" />
+                                    <Text text="N/A"
+                                        visible="{= !${scanView>expectedWeight} || ${scanView>expectedWeight} <= 0 }"
+                                        class="sapUiSmallText" />
+                                </HBox>
+                                <Input
+                                    value="{
+                                        path: 'scanView>actualWeight',
+                                        type: 'sap.ui.model.type.Float',
+                                        formatOptions: { maxFractionDigits: 3 }
+                                    }"
+                                    placeholder="Enter weight…"
+                                    width="9rem"
+                                    textAlign="End"
+                                    description="{scanView>weightUnit}" />
+                                <ObjectNumber
+                                    number="{
+                                        parts: ['scanView>expectedWeight','scanView>actualWeight'],
+                                        formatter: '.formatter.weightDeltaNumber'
+                                    }"
+                                    unit="%"
+                                    state="{
+                                        parts: ['scanView>expectedWeight','scanView>actualWeight'],
+                                        formatter: '.formatter.weightDeltaState'
+                                    }"
+                                    hAlign="End" />
+                                <ObjectStatus
+                                    text="{scanView>labelStatus}"
+                                    state="{
+                                        path: 'scanView>labelStatus',
+                                        formatter: '.formatter.labelStatusState'
+                                    }"
+                                    icon="{
+                                        path: 'scanView>labelStatus',
+                                        formatter: '.formatter.labelStatusIcon'
+                                    }" />
+                                <ObjectStatus
+                                    text="{
+                                        path: 'scanView>stackingCompliant',
+                                        formatter: '.formatter.stackingText'
+                                    }"
+                                    state="{
+                                        path: 'scanView>stackingCompliant',
+                                        formatter: '.formatter.stackingState'
+                                    }" />
+                                <Text
+                                    text="{scanView>issue}"
+                                    wrapping="true" />
+                                <HBox alignItems="Center" justifyContent="Center">
+                                    <Button
+                                        text="Detail"
+                                        type="Transparent"
+                                        icon="sap-icon://detail-view"
+                                        press=".onHUPress" />
+                                    <Button
+                                        icon="sap-icon://camera"
+                                        type="Transparent"
+                                        tooltip="Scan pallet image"
+                                        press=".onScanPalletImage"
+                                        customData:huId="{scanView>huId}" />
+                                </HBox>
+                            </cells>
+                        </ColumnListItem>
+                    </items>
+
+                    <noData>
+                        <IllustratedMessage
+                            illustrationType="sapIllus-NoData"
+                            title="No HUs"
+                            description="Run a scan to see handling unit results." />
+                    </noData>
+                </Table>
+
+                <!-- ─── Delivery Items Panel (from ODO2) ─────────────── -->
+                <Panel
+                    id="deliveryItemsPanel"
+                    headerText="Delivery Items from EWM"
+                    expandable="true"
+                    expanded="false"
+                    visible="{= ${scanView>/deliveryItems} !== undefined &amp;&amp; ${scanView>/deliveryItems}.length > 0 }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <Table
+                            items="{scanView>/deliveryItems}"
+                            noDataText="No items"
+                            class="sapUiSmallMargin">
+                            <columns>
+                                <Column width="7rem"><Text text="Item" /></Column>
+                                <Column><Text text="Product" /></Column>
+                                <Column width="8rem" hAlign="End"><Text text="Qty" /></Column>
+                                <Column width="5rem"><Text text="Unit" /></Column>
+                                <Column width="7rem" hAlign="Center"><Text text="GI Status" /></Column>
+                                <Column width="7rem" hAlign="Center"><Text text="Pick Status" /></Column>
+                                <Column width="8rem" hAlign="Center"><Text text="Staging Bay" /></Column>
+                            </columns>
+                            <items>
+                                <ColumnListItem>
+                                    <cells>
+                                        <Text text="{scanView>itemNumber}" />
+                                        <Text text="{scanView>product}" />
+                                        <ObjectNumber
+                                            number="{
+                                                path: 'scanView>quantity',
+                                                type: 'sap.ui.model.type.Float',
+                                                formatOptions: { maxFractionDigits: 3 }
+                                            }"
+                                            hAlign="End" />
+                                        <Text text="{scanView>unit}" />
+                                        <ObjectStatus
+                                            text="{scanView>giStatus}"
+                                            state="{= ${scanView>giStatus} === 'C' ? 'Success' : ${scanView>giStatus} === 'B' ? 'Warning' : 'None' }" />
+                                        <ObjectStatus
+                                            text="{scanView>pickStatus}"
+                                            state="{= ${scanView>pickStatus} === 'C' ? 'Success' : ${scanView>pickStatus} === 'B' ? 'Warning' : 'None' }" />
+                                        <Text text="{scanView>stagingBay}" />
+                                    </cells>
+                                </ColumnListItem>
+                            </items>
+                        </Table>
+                    </content>
+                </Panel>
+
+                <!-- ─── Vision Analysis Panel ──────────────────────── -->
+                <Panel
+                    id="visionPanel"
+                    headerText="Vision Analysis — NVIDIA + Claude AI"
+                    expandable="true"
+                    expanded="true"
+                    visible="{= ${scanView>/visionBusy} || !!${scanView>/aiVerdict} }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <VBox class="sapUiSmallMargin">
+
+                            <!-- ── Warehouse Task Result Banner ───────── -->
+                            <MessageStrip
+                                text="Warehouse Task {scanView>/wtNumber} created in EWM — correction task sent to RF gun"
+                                type="Success"
+                                showIcon="true"
+                                showCloseButton="false"
+                                class="sapUiSmallMarginBottom"
+                                visible="{scanView>/wtCreated}" />
+                            <VBox visible="{= ${scanView>/wtCreated} &amp;&amp; !!${scanView>/wtText} }"
+                                  class="sapUiSmallMarginBottom">
+                                <Label text="Task Description (visible on RF gun)" design="Bold" class="sapUiTinyMarginBottom" />
+                                <Text text="{scanView>/wtText}" wrapping="true"
+                                      class="sapUiSmallText" />
+                                <Button
+                                    text="Re-validate after correction"
+                                    icon="sap-icon://refresh"
+                                    type="Emphasized"
+                                    press=".onReScan"
+                                    class="sapUiSmallMarginTop" />
+                            </VBox>
+
+                            <!-- ── Agent Pipeline ─────────────────────── -->
+                            <VBox visible="{= ${scanView>/visionBusy} || !!${scanView>/aiVerdict} }"
+                                  class="sapUiSmallMarginBottom">
+                                <Label text="Agent Pipeline" design="Bold" class="sapUiTinyMarginBottom" />
+                                <!-- Agent cards — one per agent using List binding -->
+                                <List
+                                    id="agentPipelineList"
+                                    items="{scanView>/agents}"
+                                    showSeparators="None"
+                                    class="sapUiNoMargin">
+                                    <CustomListItem class="sapUiNoMargin sapUiNoPadding">
+                                        <HBox alignItems="Center"
+                                              class="sapUiTinyMarginBottom sapUiTinyMarginEnd"
+                                              renderType="Bare">
+                                            <!-- Status icon -->
+                                            <core:Icon
+                                                src="{= ${scanView>status} === 'DONE'    ? 'sap-icon://accept'         :
+                                                         ${scanView>status} === 'RUNNING' ? 'sap-icon://synchronize'    :
+                                                         ${scanView>status} === 'FAILED'  ? 'sap-icon://error'          :
+                                                         'sap-icon://circle-task' }"
+                                                color="{= ${scanView>status} === 'DONE'    ? '#107e3e' :
+                                                          ${scanView>status} === 'RUNNING' ? '#0070f2' :
+                                                          ${scanView>status} === 'FAILED'  ? '#bb0000' :
+                                                          '#89919a' }"
+                                                size="1.1rem"
+                                                class="sapUiTinyMarginEnd" />
+                                            <!-- Agent icon -->
+                                            <core:Icon
+                                                src="{scanView>icon}"
+                                                size="0.9rem"
+                                                color="{= ${scanView>status} === 'WAITING' ? '#89919a' : 'Default' }"
+                                                class="sapUiTinyMarginEnd" />
+                                            <!-- Label + detail -->
+                                            <VBox class="sapUiTinyMarginEnd" width="7rem">
+                                                <Text
+                                                    text="{scanView>label}"
+                                                    class="{= ${scanView>status} === 'WAITING' ? 'sapUiSmallText' : '' }" />
+                                                <Text
+                                                    text="{scanView>detail}"
+                                                    wrapping="false"
+                                                    class="sapUiSmallText"
+                                                    visible="{= !!${scanView>detail} }" />
+                                            </VBox>
+                                            <!-- Time badge -->
+                                            <ObjectStatus
+                                                text="{scanView>time}"
+                                                state="{= ${scanView>status} === 'DONE' ? 'Success' : 'None' }"
+                                                visible="{= !!${scanView>time} }"
+                                                class="sapUiTinyMarginEnd" />
+                                            <!-- Running spinner text -->
+                                            <Text
+                                                text="..."
+                                                class="sapUiSmallText sapUiTinyMarginEnd"
+                                                visible="{= ${scanView>status} === 'RUNNING' }" />
+                                            <!-- Arrow between cards (not after last) -->
+                                            <core:Icon
+                                                src="sap-icon://forward"
+                                                size="0.7rem"
+                                                color="#89919a"
+                                                class="sapUiSmallMarginEnd"
+                                                visible="{= ${scanView>agentId} !== 'resolution' &amp;&amp; ${scanView>agentId} !== 'action' }" />
+                                        </HBox>
+                                    </CustomListItem>
+                                </List>
+                            </VBox>
+
+                            <!-- Loading label (below pipeline, before tabs appear) -->
+                            <Text
+                                visible="{scanView>/visionBusy}"
+                                text="Running multi-agent validation..."
+                                class="sapUiTinyMarginBottom"
+                                textAlign="Center" />
+
+                            <!-- Results — three tabs -->
+                            <IconTabBar
+                                id="visionTabs"
+                                visible="{= !${scanView>/visionBusy} &amp;&amp; !!${scanView>/aiVerdict} }"
+                                stretchContentHeight="false">
+                                <items>
+
+                                    <!-- Tab 1: Vision Findings -->
+                                    <IconTabFilter
+                                        text="Vision Findings"
+                                        icon="sap-icon://camera"
+                                        iconColor="{= ${scanView>/palletCondition} === 'GOOD' ? 'Positive' : ${scanView>/palletCondition} === 'DAMAGED' ? 'Negative' : 'Critical' }">
+                                        <VBox class="sapUiSmallMargin">
+                                            <HBox alignItems="Center" class="sapUiSmallMarginBottom">
+                                                <ObjectStatus
+                                                    text="Pallet: {scanView>/palletCondition}"
+                                                    state="{= ${scanView>/palletCondition} === 'GOOD' ? 'Success' : ${scanView>/palletCondition} === 'DAMAGED' ? 'Error' : 'Warning' }"
+                                                    icon="{= ${scanView>/palletCondition} === 'GOOD' ? 'sap-icon://accept' : 'sap-icon://alert' }"
+                                                    inverted="true"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="{= ${scanView>/huLabelMatch} ? 'Label Matched' : 'Label Not Matched' }"
+                                                    state="{= ${scanView>/huLabelMatch} ? 'Success' : 'Error' }"
+                                                    icon="{= ${scanView>/huLabelMatch} ? 'sap-icon://accept' : 'sap-icon://decline' }"
+                                                    inverted="true"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="{= ${scanView>/itemCountMatch} === true ? 'Count OK' : ${scanView>/itemCountMatch} === false ? 'Count Mismatch' : 'Count Inconclusive' }"
+                                                    state="{= ${scanView>/itemCountMatch} === true ? 'Success' : ${scanView>/itemCountMatch} === false ? 'Error' : 'None' }"
+                                                    icon="{= ${scanView>/itemCountMatch} === true ? 'sap-icon://accept' : 'sap-icon://question-mark' }"
+                                                    inverted="{= ${scanView>/itemCountMatch} !== null }" />
+                                            </HBox>
+
+                                            <!-- Vision detail grid -->
+                                            <HBox wrap="Wrap" class="sapUiSmallMarginTop">
+                                                <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="12rem">
+                                                    <Label text="HU Labels Detected" design="Bold" />
+                                                    <Text text="{= (${scanView>/visionFindings/huLabels} || []).join(', ') || 'None detected' }" wrapping="true" />
+                                                </VBox>
+                                                <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="8rem">
+                                                    <Label text="Items Visible" design="Bold" />
+                                                    <Text text="{scanView>/visionFindings/itemCount}" />
+                                                </VBox>
+                                                <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="8rem">
+                                                    <Label text="Label Damage" design="Bold" />
+                                                    <ObjectStatus
+                                                        text="{= ${scanView>/visionFindings/labelDamage} ? 'Damaged' : 'OK' }"
+                                                        state="{= ${scanView>/visionFindings/labelDamage} ? 'Error' : 'Success' }" />
+                                                </VBox>
+                                                <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="8rem">
+                                                    <Label text="Missing Labels" design="Bold" />
+                                                    <ObjectStatus
+                                                        text="{= ${scanView>/visionFindings/missingLabels} ? 'Missing' : 'OK' }"
+                                                        state="{= ${scanView>/visionFindings/missingLabels} ? 'Warning' : 'Success' }" />
+                                                </VBox>
+                                                <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="20rem">
+                                                    <Label text="Camera Observations" design="Bold" />
+                                                    <Text text="{scanView>/visionFindings/observations}" wrapping="true" />
+                                                </VBox>
+                                                <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="8rem">
+                                                    <Label text="AI Confidence" design="Bold" />
+                                                    <ObjectStatus
+                                                        text="{scanView>/confidence}"
+                                                        state="{= ${scanView>/confidence} === 'HIGH' ? 'Success' : ${scanView>/confidence} === 'MEDIUM' ? 'Warning' : 'Error' }" />
+                                                </VBox>
+                                            </HBox>
+
+                                            <!-- Stacking Analysis -->
+                                            <Label text="Stacking Analysis" design="Bold" class="sapUiSmallMarginTop sapUiTinyMarginBottom" />
+                                            <HBox alignItems="Center" wrap="Wrap" class="sapUiTinyMarginBottom">
+                                                <ObjectStatus
+                                                    text="{= ${scanView>/visionFindings/stackingVerdict} || (${scanView>/visionFindings/stackingCompliant} ? 'COMPLIANT' : 'VIOLATION') }"
+                                                    state="{= ${scanView>/visionFindings/stackingVerdict} === 'COMPLIANT' || ${scanView>/visionFindings/stackingCompliant} ? 'Success' : ${scanView>/visionFindings/stackingVerdict} === 'REVIEW' ? 'Warning' : 'Error' }"
+                                                    icon="{= ${scanView>/visionFindings/stackingVerdict} === 'COMPLIANT' || ${scanView>/visionFindings/stackingCompliant} ? 'sap-icon://accept' : 'sap-icon://alert' }"
+                                                    inverted="true"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="Stability {scanView>/visionFindings/stabilityScore}/100"
+                                                    state="{= ${scanView>/visionFindings/stabilityScore} >= 80 ? 'Success' : ${scanView>/visionFindings/stabilityScore} >= 50 ? 'Warning' : 'Error' }"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="Layers: {scanView>/visionFindings/layersDetected}"
+                                                    state="None"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="{= ${scanView>/visionFindings/stretchWrapIntact} ? 'Wrap intact' : 'Wrap damaged' }"
+                                                    state="{= ${scanView>/visionFindings/stretchWrapIntact} ? 'Success' : 'Warning' }"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="{= ${scanView>/visionFindings/heavyOnTop} ? 'Heavy on top' : 'Weight dist. OK' }"
+                                                    state="{= ${scanView>/visionFindings/heavyOnTop} ? 'Error' : 'Success' }"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <ObjectStatus
+                                                    text="{= ${scanView>/visionFindings/overhanging} ? 'Overhang' : 'No overhang' }"
+                                                    state="{= ${scanView>/visionFindings/overhanging} ? 'Warning' : 'Success' }" />
+                                            </HBox>
+                                            <!-- Labels read from image -->
+                                            <VBox visible="{= (${scanView>/visionFindings/labelTextsRead} || []).length > 0 }"
+                                                  class="sapUiTinyMarginBottom">
+                                                <Label text="Labels read from image" design="Bold" class="sapUiTinyMarginBottom" />
+                                                <Text
+                                                    text="{= (${scanView>/visionFindings/labelTextsRead} || []).join(' · ') }"
+                                                    wrapping="true"
+                                                    class="sapUiSmallText" />
+                                            </VBox>
+                                            <!-- Specific violations -->
+                                            <VBox visible="{= (${scanView>/visionFindings/stackingViolations} || []).length > 0 }"
+                                                  class="sapUiTinyMarginBottom">
+                                                <Label text="Violations detected" design="Bold" class="sapUiTinyMarginBottom" />
+                                                <Text
+                                                    text="{= (${scanView>/visionFindings/stackingViolations} || []).join('; ') }"
+                                                    wrapping="true"
+                                                    class="sapUiSmallText" />
+                                            </VBox>
+                                            <Text
+                                                text="{scanView>/visionFindings/stackingRecommendation}"
+                                                wrapping="true"
+                                                class="sapUiSmallText"
+                                                visible="{= !!${scanView>/visionFindings/stackingRecommendation} }" />
+                                        </VBox>
+                                    </IconTabFilter>
+
+                                    <!-- Tab 2: EWM Data -->
+                                    <IconTabFilter
+                                        text="EWM Data"
+                                        icon="sap-icon://database">
+                                        <VBox class="sapUiSmallMargin">
+                                            <Label text="SAP EWM — Last Scan Results" design="Bold" class="sapUiSmallMarginBottom" />
+                                            <Text text="{scanView>/ewmSummary}" wrapping="true" class="sapUiTinyMarginTop" />
+                                        </VBox>
+                                    </IconTabFilter>
+
+                                    <!-- Tab 3: AI Verdict -->
+                                    <IconTabFilter
+                                        text="AI Verdict"
+                                        icon="sap-icon://ai"
+                                        iconColor="{= ${scanView>/confidence} === 'HIGH' ? 'Positive' : 'Critical' }">
+                                        <VBox class="sapUiSmallMargin">
+                                            <HBox alignItems="Center" class="sapUiSmallMarginBottom">
+                                                <core:Icon
+                                                    src="sap-icon://ai"
+                                                    size="1.5rem"
+                                                    color="Accent5"
+                                                    class="sapUiSmallMarginEnd" />
+                                                <Text text="NVIDIA Vision + Claude Combined Analysis" design="Bold" />
+                                            </HBox>
+                                            <Text
+                                                text="{scanView>/aiVerdict}"
+                                                wrapping="true"
+                                                class="sapUiSmallMarginBottom" />
+                                            <MessageStrip
+                                                text="Scanned image: {scanView>/palletImageName}"
+                                                type="Information"
+                                                showIcon="true"
+                                                showCloseButton="false"
+                                                visible="{= !!${scanView>/palletImageName} }" />
+                                        </VBox>
+                                    </IconTabFilter>
+
+                                </items>
+                            </IconTabBar>
+                        </VBox>
+                    </content>
+                </Panel>
+
+                <!-- ─── Exceptions ──────────────────────────────────── -->                <Panel
+                    id="exceptionsPanel"
+                    headerText="Exceptions ({scanView>/exceptionCount})"
+                    expandable="true"
+                    expanded="true"
+                    visible="{= ${scanView>/exceptionCount} > 0 }"
+                    class="sapUiSmallMarginBottom">
+                    <content>
+                        <List
+                            id="exceptionsList"
+                            items="{scanView>/exceptions}"
+                            showSeparators="Inner"
+                            noDataText="No exceptions.">
+                            <CustomListItem>
+                                <HBox alignItems="Center" class="sapUiSmallMargin">
+                                    <core:Icon
+                                        src="{
+                                            path: 'scanView>exceptionType',
+                                            formatter: '.formatter.exceptionIcon'
+                                        }"
+                                        size="1.5rem"
+                                        color="{
+                                            path: 'scanView>exceptionType',
+                                            formatter: '.formatter.exceptionColor'
+                                        }"
+                                        class="sapUiSmallMarginEnd" />
+                                    <VBox class="sapUiSmallMarginEnd" width="100%">
+                                        <Text text="{scanView>huId}" design="Bold" />
+                                        <Text text="{scanView>exceptionType} — {scanView>description}" />
+                                        <Text
+                                            id="resolutionText"
+                                            text="{scanView>resolutionAction}"
+                                            wrapping="true"
+                                            visible="{= !!${scanView>resolutionAction} }"
+                                            class="sapUiTinyMarginTop" />
+                                    </VBox>
+                                    <Button
+                                        text="{= ${scanView>resolutionAction} ? 'Resolved' : 'AI Resolve' }"
+                                        type="{= ${scanView>resolutionAction} ? 'Accept' : 'Emphasized' }"
+                                        icon="{= ${scanView>resolutionAction} ? 'sap-icon://accept' : 'sap-icon://ai' }"
+                                        enabled="{= !${scanView>resolutionAction} }"
+                                        press=".onResolveException" />
+                                </HBox>
+                            </CustomListItem>
+                        </List>
+                    </content>
+                </Panel>
+
+
+            </VBox>
+        </content>
+
+    </Page>
+</mvc:View>

@@ -3,7 +3,7 @@
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:core="sap.ui.core"
-    xmlns:f="sap.f"
+    xmlns:layout="sap.ui.layout"
     displayBlock="true">
 
     <Page
@@ -12,232 +12,435 @@
         showNavButton="false"
         class="sapUiContentPadding">
 
-        <!-- ═══ Page Sub-Header: KPI Strip ══════════════════════════ -->
+        <!-- ═══ Compact single-row header ════════════════════════════════ -->
         <subHeader>
             <Bar>
                 <contentLeft>
-                    <ObjectNumber
-                        id="kpiTotal"
-                        number="{worklistView>/totalCount}"
-                        unit="HUs"
-                        emphasized="true" />
-                    <Text text=" · " class="sapUiSmallMarginBeginEnd" />
-                    <ObjectStatus
-                        id="kpiPassed"
-                        text="{worklistView>/passedCount} Passed"
-                        state="Success"
-                        icon="sap-icon://accept" />
-                    <Text text=" · " class="sapUiSmallMarginBeginEnd" />
-                    <ObjectStatus
-                        id="kpiFailed"
-                        text="{worklistView>/failedCount} Failed"
-                        state="Error"
-                        icon="sap-icon://error" />
-                    <Text text=" · " class="sapUiSmallMarginBeginEnd" />
-                    <ObjectStatus
-                        id="kpiReview"
-                        text="{worklistView>/reviewCount} Review"
-                        state="Warning"
-                        icon="sap-icon://warning" />
+                    <Label text="Warehouse" labelFor="inputWarehouse" class="sapUiTinyMarginEnd" />
+                    <Input
+                        id="inputWarehouse"
+                        value="{worklistView>/warehouse}"
+                        placeholder="e.g. 2001"
+                        width="5.5rem"
+                        submit=".onLoadDeliveries"
+                        class="sapUiTinyMarginEnd" />
+                    <Label text="Delivery" labelFor="inputDelivery" class="sapUiTinyMarginEnd" />
+                    <Input
+                        id="inputDelivery"
+                        value="{worklistView>/delivery}"
+                        placeholder="Enter OBD number"
+                        width="11rem"
+                        submit=".onScanDelivery"
+                        class="sapUiTinyMarginEnd" />
+                    <Button
+                        id="btnScan"
+                        text="Scan &amp; Validate"
+                        type="Emphasized"
+                        icon="sap-icon://play"
+                        press=".onScanDelivery"
+                        style="background:#0066ff;font-weight:700;" />
                 </contentLeft>
                 <contentRight>
-                    <ObjectStatus
-                        id="kpiConfidence"
-                        text="Avg. Confidence: {worklistView>/avgConfidence}%"
-                        state="Information"
-                        icon="sap-icon://ai" />
+                    <Input
+                        id="inputScaleIP"
+                        value="{worklistView>/scaleIP}"
+                        placeholder="Scale IP"
+                        width="9rem"
+                        submit=".onConnectScale"
+                        class="sapUiTinyMarginEnd" />
+                    <Button
+                        text="{= ${worklistView>/scaleConnected} ? '⚖️ ✓' : '⚖️ Connect Scale' }"
+                        type="{= ${worklistView>/scaleConnected} ? 'Success' : 'Default' }"
+                        press=".onConnectScale"
+                        busy="{worklistView>/scaleBusy}"
+                        class="sapUiTinyMarginEnd" />
+                    <Button
+                        text="History"
+                        icon="sap-icon://history"
+                        type="Transparent"
+                        press=".onShowHistory" />
+                    <Button
+                        id="btnCopilot"
+                        text="AI Copilot"
+                        icon="sap-icon://ai"
+                        type="Transparent"
+                        press=".onOpenCopilot" />
+                    <Button
+                        icon="sap-icon://refresh"
+                        type="Transparent"
+                        tooltip="Reload deliveries"
+                        press=".onLoadDeliveries" />
                 </contentRight>
             </Bar>
         </subHeader>
 
-        <!-- ═══ Main Content ════════════════════════════════════════ -->
+        <!-- ═══ Main Content ══════════════════════════════════════════ -->
         <content>
-            <Table
-                id="huTable"
-                items="{
-                    path: '/HandlingUnits',
-                    parameters: {
-                        $orderby: 'status desc,severity asc',
-                        $select: 'ID,huID,outboundDelivery,status,severity,expectedWeight,actualWeight,validationConfidence,issueDescription'
-                    }
-                }"
-                mode="None"
-                growing="true"
-                growingThreshold="25"
-                growingScrollToLoad="true"
-                sticky="ColumnHeaders,HeaderToolbar"
-                busyIndicatorDelay="0"
-                updateFinished=".onTableUpdateFinished"
-                class="sapUiNoContentPadding">
+            <VBox width="100%">
 
-                <!-- Toolbar -->
-                <headerToolbar>
-                    <OverflowToolbar>
-                        <Title
-                            id="tableTitle"
-                            text="Handling Units ({worklistView>/tableItemCount})"
-                            level="H3"
-                            titleStyle="H3" />
-                        <ToolbarSpacer />
-                        <SearchField
-                            id="searchField"
-                            width="18rem"
-                            placeholder="Search by HU ID or delivery…"
-                            search=".onSearch"
-                            liveChange=".onSearch" />
-                        <SegmentedButton
-                            id="statusFilter"
-                            selectionChange=".onStatusFilterChange"
-                            selectedKey="{worklistView>/selectedStatusFilter}">
-                            <items>
-                                <SegmentedButtonItem key="All"    text="All" />
-                                <SegmentedButtonItem key="Failed" text="Failed" />
-                                <SegmentedButtonItem key="Review" text="Review" />
-                                <SegmentedButtonItem key="Passed" text="Passed" />
-                            </items>
-                        </SegmentedButton>
-                        <Button
-                            id="refreshButton"
-                            icon="sap-icon://refresh"
-                            tooltip="Refresh"
-                            press=".onRefresh"
-                            type="Transparent" />
-                    </OverflowToolbar>
-                </headerToolbar>
+                <Table
+                    id="deliveriesTable"
+                    items="{worklistView>/deliveries}"
+                    visible="{= !${worklistView>/showHistory} }"
+                    busyIndicatorDelay="0"
+                    busy="{worklistView>/busy}"
+                    noDataText="{worklistView>/noDataText}"
+                    class="sapUiNoContentPadding">
 
-                <!-- Column Headers -->
-                <columns>
-                    <Column
-                        id="colHuID"
-                        width="12rem"
-                        hAlign="Begin">
-                        <Text text="HU ID" />
-                    </Column>
-                    <Column
-                        id="colDelivery"
-                        width="12rem"
-                        hAlign="Begin">
-                        <Text text="Delivery" />
-                    </Column>
-                    <Column
-                        id="colStatus"
-                        width="10rem"
-                        hAlign="Begin">
-                        <Text text="Status" />
-                    </Column>
-                    <Column
-                        id="colSeverity"
-                        width="9rem"
-                        hAlign="Begin">
-                        <Text text="Severity" />
-                    </Column>
-                    <Column
-                        id="colWeightDelta"
-                        width="10rem"
-                        hAlign="End">
-                        <Text text="Weight Delta (%)" />
-                    </Column>
-                    <Column
-                        id="colConfidence"
-                        width="10rem"
-                        hAlign="End"
-                        minScreenWidth="Tablet"
-                        demandPopin="true">
-                        <Text text="Confidence" />
-                    </Column>
-                    <Column
-                        id="colAction"
-                        width="7rem"
-                        hAlign="Center"
-                        minScreenWidth="Desktop"
-                        demandPopin="true">
-                        <Text text="" />
-                    </Column>
-                </columns>
+                        <headerToolbar>
+                            <OverflowToolbar>
+                                <Title
+                                    text="Open Deliveries — Warehouse {worklistView>/warehouse} ({worklistView>/deliveryCount})"
+                                    level="H3"
+                                    titleStyle="H3" />
+                                <ToolbarSpacer />
+                                <SearchField
+                                    width="14rem"
+                                    placeholder="Filter deliveries…"
+                                    liveChange=".onFilterDeliveries" />
+                            </OverflowToolbar>
+                        </headerToolbar>
 
-                <!-- Row Template -->
-                <items>
-                    <ColumnListItem
-                        id="huListItem"
-                        type="Navigation"
-                        press=".onItemPress"
-                        highlight="{
-                            path: 'status',
-                            formatter: '.formatter.statusHighlight'
-                        }">
-                        <cells>
-                            <!-- HU ID -->
-                            <ObjectIdentifier
-                                title="{huID}"
-                                titleActive="true"
-                                titlePress=".onItemPress" />
+                        <columns>
+                            <Column width="14rem"><Text text="Outbound Delivery" /></Column>
+                            <Column width="8rem" hAlign="Center"><Text text="HUs Staged" /></Column>
+                            <Column width="10rem" hAlign="Center"><Text text="Last Scan" /></Column>
+                            <Column width="10rem" hAlign="Center"><Text text="Status" /></Column>
+                            <Column hAlign="End"><Text text="" /></Column>
+                        </columns>
 
-                            <!-- Delivery -->
-                            <Text text="{outboundDelivery}" />
+                        <items>
+                            <ColumnListItem
+                                type="Active"
+                                press=".onDeliveryPress"
+                                highlight="{
+                                    path: 'worklistView>lastStatus',
+                                    formatter: '.formatter.statusHighlight'
+                                }">
+                                <cells>
+                                    <ObjectIdentifier
+                                        title="{worklistView>outboundDelivery}"
+                                        titleActive="true"
+                                        titlePress=".onDeliveryPress" />
+                                    <ObjectNumber
+                        number="{worklistView>huCount}"
+                        unit="{= ${worklistView>huCount} === 1 ? 'HU' : 'HUs' }" />
+                                    <Text text="{
+                                        path: 'worklistView>lastScanAt',
+                                        formatter: '.formatter.timeAgo'
+                                    }" />
+                                    <HBox>
+                                        <ObjectStatus
+                                            text="{worklistView>lastStatus}"
+                                            state="{
+                                                path: 'worklistView>lastStatus',
+                                                formatter: '.formatter.statusState'
+                                            }"
+                                            visible="{= !!${worklistView>lastStatus} }" />
+                                        <core:HTML
+                                            visible="{= !${worklistView>lastStatus} }"
+                                            content="&lt;span style='color:#aaa;font-size:12px'&gt;Not scanned&lt;/span&gt;" />
+                                    </HBox>
+                                    <HBox>
+                                        <Button
+                                            text="Scan"
+                                            type="Emphasized"
+                                            icon="sap-icon://play"
+                                            press=".onDeliveryPress"
+                                            class="sapUiTinyMarginEnd" />
+                                        <Button
+                                            text="Scan Pallet"
+                                            type="Default"
+                                            icon="sap-icon://camera"
+                                            press=".onScanPalletRow"
+                                            tooltip="NVIDIA Vision AI — take a photo of the pallet to validate labels and condition" />
+                                    </HBox>
+                                </cells>
+                            </ColumnListItem>
+                        </items>
 
-                            <!-- Status as ObjectStatus -->
-                            <ObjectStatus
-                                text="{status}"
-                                state="{
-                                    path: 'status',
-                                    formatter: '.formatter.statusState'
-                                }"
-                                icon="{
-                                    path: 'status',
-                                    formatter: '.formatter.statusIcon'
-                                }"
-                                inverted="false" />
+                    </Table>
 
-                            <!-- Severity -->
-                            <ObjectStatus
-                                text="{severity}"
-                                state="{
-                                    path: 'severity',
-                                    formatter: '.formatter.severityState'
-                                }" />
+                    <!-- Instruction card — shown when no scan has been done yet -->
+                    <core:HTML
+                        visible="{= !${worklistView>/showHistory} }"
+                        content="&lt;div style='margin:24px auto;max-width:500px;text-align:center;color:#aaa;padding:20px'&gt;&lt;div style='font-size:32px;margin-bottom:8px'&gt;👆&lt;/div&gt;&lt;div style='font-size:14px'&gt;Click &lt;b&gt;Scan&lt;/b&gt; on any delivery above, or enter an OBD number and press &lt;b&gt;Scan &amp;amp; Validate&lt;/b&gt;&lt;/div&gt;&lt;/div&gt;" />
 
-                            <!-- Weight Delta -->
-                            <ObjectNumber
-                                number="{
-                                    parts: ['expectedWeight','actualWeight'],
-                                    formatter: '.formatter.weightDeltaNumber'
-                                }"
-                                unit="%"
-                                state="{
-                                    parts: ['expectedWeight','actualWeight'],
-                                    formatter: '.formatter.weightDeltaState'
-                                }"
-                                textAlign="End" />
+                    <!-- Hidden file input for pallet camera capture -->
+                    <core:HTML
+                        id="wlPalletImageInput"
+                        content="&lt;input type='file' id='wlPalletFileInput' accept='image/*' capture='environment' style='display:none'/&gt;" />
 
-                            <!-- Confidence -->
-                            <ObjectNumber
-                                number="{
-                                    path: 'validationConfidence',
-                                    type: 'sap.ui.model.type.Float',
-                                    formatOptions: { maxFractionDigits: 1, minFractionDigits: 1 }
-                                }"
-                                unit="%"
-                                textAlign="End" />
+                    <!-- History table -->
+                    <Table
+                        id="historyTable"
+                        items="{
+                            path: '/ShipmentScans',
+                            parameters: { $orderby: 'createdAt desc' }
+                        }"
+                        visible="{worklistView>/showHistory}"
+                        busyIndicatorDelay="0"
+                        growing="true"
+                        growingThreshold="50"
+                        noDataText="No scan history found."
+                        class="sapUiNoContentPadding">
 
-                            <!-- Quick Detail Button -->
-                            <Button
-                                icon="sap-icon://detail-view"
-                                type="Transparent"
-                                tooltip="View Details"
-                                press=".onItemPress" />
-                        </cells>
-                    </ColumnListItem>
-                </items>
+                        <headerToolbar>
+                            <OverflowToolbar>
+                                <Button
+                                    icon="sap-icon://nav-back"
+                                    type="Transparent"
+                                    press=".onHideHistory" />
+                                <Title text="Scan History" level="H3" titleStyle="H3" />
+                                <ToolbarSpacer />
+                            </OverflowToolbar>
+                        </headerToolbar>
 
-                <!-- No data -->
-                <noData>
-                    <IllustratedMessage
-                        illustrationType="sapIllus-NoData"
-                        title="No Handling Units Found"
-                        description="Try adjusting your search or filter criteria." />
-                </noData>
-            </Table>
+                        <columns>
+                            <Column width="14rem"><Text text="Delivery" /></Column>
+                            <Column width="8rem"><Text text="Warehouse" /></Column>
+                            <Column width="12rem"><Text text="Scanned At" /></Column>
+                            <Column width="6rem" hAlign="Center"><Text text="Total" /></Column>
+                            <Column width="6rem" hAlign="Center"><Text text="Passed" /></Column>
+                            <Column width="6rem" hAlign="Center"><Text text="Failed" /></Column>
+                            <Column width="10rem"><Text text="Status" /></Column>
+                        </columns>
+
+                        <items>
+                            <ColumnListItem
+                                type="Active"
+                                press=".onHistoryItemPress"
+                                highlight="{
+                                    path: 'dispatchStatus',
+                                    formatter: '.formatter.statusHighlight'
+                                }">
+                                <cells>
+                                    <ObjectIdentifier title="{outboundDelivery}" />
+                                    <Text text="{warehouse}" />
+                                    <Text text="{createdAt}" />
+                                    <ObjectNumber number="{totalHUs}" />
+                                    <ObjectNumber number="{passedHUs}" state="Success" />
+                                    <ObjectNumber number="{failedHUs}" state="Error" />
+                                    <ObjectStatus
+                                        text="{dispatchStatus}"
+                                        state="{
+                                            path: 'dispatchStatus',
+                                            formatter: '.formatter.statusState'
+                                        }" />
+                                </cells>
+                            </ColumnListItem>
+                        </items>
+
+                    </Table>
+
+            </VBox>
         </content>
 
     </Page>
+
+    <!-- ═══ AI Copilot Dialog ═══════════════════════════════════════ -->
+    <Dialog
+        id="copilotDialog"
+        title="AI Copilot"
+        contentWidth="38rem"
+        resizable="true"
+        draggable="true">
+        <customHeader>
+            <Bar>
+                <contentLeft>
+                    <core:Icon src="sap-icon://ai" size="1.2rem" color="Accent5" class="sapUiSmallMarginEnd" />
+                    <Title text="AI Copilot" level="H4" titleStyle="H4" />
+                </contentLeft>
+                <contentRight>
+                    <ObjectStatus text="Online" state="Success" icon="sap-icon://status-positive" />
+                </contentRight>
+            </Bar>
+        </customHeader>
+        <content>
+            <VBox class="sapUiSmallMargin">
+
+                <List
+                    id="wlChatList"
+                    items="{wlChat>/messages}"
+                    showSeparators="None"
+                    class="sapUiSmallMarginBottom">
+                    <CustomListItem>
+                        <HBox
+                            justifyContent="{= ${wlChat>role} === 'user' ? 'End' : 'Start' }"
+                            width="100%"
+                            class="sapUiTinyMarginTopBottom">
+                            <VBox width="85%">
+                                <Text
+                                    text="{= ${wlChat>role} === 'user' ? 'You' : 'AI Copilot' }"
+                                    class="sapUiTinyMarginBottom" />
+                                <MessageStrip
+                                    text="{wlChat>text}"
+                                    type="{= ${wlChat>role} === 'user' ? 'None' : 'Information' }"
+                                    showIcon="{= ${wlChat>role} !== 'user' }"
+                                    showCloseButton="false" />
+                                <Text text="{wlChat>timestamp}" class="sapUiTinyMarginTop" />
+                            </VBox>
+                        </HBox>
+                    </CustomListItem>
+                </List>
+
+                <BusyIndicator
+                    visible="{worklistView>/chatBusy}"
+                    size="1rem"
+                    class="sapUiSmallMarginBottom" />
+
+                <FlexBox wrap="Wrap" class="sapUiSmallMarginBottom">
+                    <Button text="What needs attention?"          type="Transparent" press=".onWlChatSuggestion" class="sapUiTinyMarginEnd sapUiTinyMarginBottom" />
+                    <Button text="How do I resolve a blocked HU?" type="Transparent" press=".onWlChatSuggestion" class="sapUiTinyMarginEnd sapUiTinyMarginBottom" />
+                    <Button text="Explain the GI process"         type="Transparent" press=".onWlChatSuggestion" class="sapUiTinyMarginEnd sapUiTinyMarginBottom" />
+                    <Button text="What is the weight threshold?"  type="Transparent" press=".onWlChatSuggestion" class="sapUiTinyMarginEnd sapUiTinyMarginBottom" />
+                </FlexBox>
+
+                <HBox width="100%" alignItems="Center">
+                    <Input
+                        id="wlChatInput"
+                        placeholder="Ask anything…"
+                        width="100%"
+                        submit=".onWlSendChat"
+                        value="{worklistView>/chatMessage}"
+                        enabled="{= !${worklistView>/chatBusy} }"
+                        class="sapUiSmallMarginEnd" />
+                    <Button
+                        text="Send"
+                        type="Emphasized"
+                        icon="sap-icon://paper-plane"
+                        press=".onWlSendChat"
+                        enabled="{= !${worklistView>/chatBusy} }" />
+                </HBox>
+
+            </VBox>
+        </content>
+        <buttons>
+            <Button text="Close" press=".onCloseCopilot" />
+        </buttons>
+    </Dialog>
+
+    <!-- ═══ Vision Results Dialog ══════════════════════════════════ -->
+    <Dialog
+        id="visionDialog"
+        title="Vision Analysis — {worklistView>/visionDelivery}"
+        contentWidth="42rem"
+        resizable="true"
+        draggable="true"
+        busy="{worklistView>/visionBusy}"
+        busyIndicatorDelay="0">
+        <content>
+            <VBox class="sapUiSmallMargin">
+
+                <!-- Loading message -->
+                <VBox
+                    visible="{worklistView>/visionBusy}"
+                    alignItems="Center"
+                    class="sapUiMediumMargin">
+                    <BusyIndicator size="2rem" />
+                    <Text
+                        text="NVIDIA Vision AI is analyzing the pallet image..."
+                        class="sapUiSmallMarginTop"
+                        textAlign="Center" />
+                </VBox>
+
+                <!-- Status badges row -->
+                <HBox
+                    alignItems="Center"
+                    wrap="Wrap"
+                    visible="{= !${worklistView>/visionBusy} &amp;&amp; !!${worklistView>/aiVerdict} }"
+                    class="sapUiSmallMarginBottom">
+                    <ObjectStatus
+                        text="Pallet: {worklistView>/palletCondition}"
+                        state="{= ${worklistView>/palletCondition} === 'GOOD' ? 'Success' : ${worklistView>/palletCondition} === 'DAMAGED' ? 'Error' : 'Warning' }"
+                        icon="{= ${worklistView>/palletCondition} === 'GOOD' ? 'sap-icon://accept' : 'sap-icon://alert' }"
+                        inverted="true"
+                        class="sapUiSmallMarginEnd" />
+                    <ObjectStatus
+                        text="{= ${worklistView>/huLabelMatch} ? 'Label Matched' : 'Label Not Matched' }"
+                        state="{= ${worklistView>/huLabelMatch} ? 'Success' : 'Error' }"
+                        icon="{= ${worklistView>/huLabelMatch} ? 'sap-icon://accept' : 'sap-icon://decline' }"
+                        inverted="true"
+                        class="sapUiSmallMarginEnd" />
+                    <ObjectStatus
+                        text="Confidence: {worklistView>/confidence}"
+                        state="{= ${worklistView>/confidence} === 'HIGH' ? 'Success' : ${worklistView>/confidence} === 'MEDIUM' ? 'Warning' : 'Error' }"
+                        inverted="true" />
+                </HBox>
+
+                <!-- Three-tab result panel -->
+                <IconTabBar
+                    visible="{= !${worklistView>/visionBusy} &amp;&amp; !!${worklistView>/aiVerdict} }"
+                    stretchContentHeight="false">
+                    <items>
+
+                        <!-- Tab 1: Vision Findings -->
+                        <IconTabFilter text="Vision Findings" icon="sap-icon://camera">
+                            <VBox class="sapUiSmallMargin">
+                                <HBox wrap="Wrap">
+                                    <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="14rem">
+                                        <Label text="HU Labels Detected" design="Bold" />
+                                        <Text text="{= (${worklistView>/visionFindings/huLabels} || []).join(', ') || 'None detected' }" wrapping="true" />
+                                    </VBox>
+                                    <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="7rem">
+                                        <Label text="Items Visible" design="Bold" />
+                                        <Text text="{worklistView>/visionFindings/itemCount}" />
+                                    </VBox>
+                                    <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="7rem">
+                                        <Label text="Label Damage" design="Bold" />
+                                        <ObjectStatus
+                                            text="{= ${worklistView>/visionFindings/labelDamage} ? 'Damaged' : 'OK' }"
+                                            state="{= ${worklistView>/visionFindings/labelDamage} ? 'Error' : 'Success' }" />
+                                    </VBox>
+                                    <VBox class="sapUiSmallMarginEnd sapUiMediumMarginBottom" width="7rem">
+                                        <Label text="Missing Labels" design="Bold" />
+                                        <ObjectStatus
+                                            text="{= ${worklistView>/visionFindings/missingLabels} ? 'Missing' : 'OK' }"
+                                            state="{= ${worklistView>/visionFindings/missingLabels} ? 'Warning' : 'Success' }" />
+                                    </VBox>
+                                </HBox>
+                                <VBox>
+                                    <Label text="Observations" design="Bold" />
+                                    <Text text="{worklistView>/visionFindings/observations}" wrapping="true" class="sapUiTinyMarginTop" />
+                                </VBox>
+                            </VBox>
+                        </IconTabFilter>
+
+                        <!-- Tab 2: EWM Data -->
+                        <IconTabFilter text="EWM Data" icon="sap-icon://database">
+                            <VBox class="sapUiSmallMargin">
+                                <Label text="SAP EWM — Last Scan Results" design="Bold" class="sapUiSmallMarginBottom" />
+                                <Text text="{worklistView>/ewmSummary}" wrapping="true" />
+                            </VBox>
+                        </IconTabFilter>
+
+                        <!-- Tab 3: AI Verdict -->
+                        <IconTabFilter text="AI Verdict" icon="sap-icon://ai">
+                            <VBox class="sapUiSmallMargin">
+                                <HBox alignItems="Center" class="sapUiSmallMarginBottom">
+                                    <core:Icon src="sap-icon://ai" size="1.2rem" color="Accent5" class="sapUiSmallMarginEnd" />
+                                    <Text text="NVIDIA Vision + Claude Combined Analysis" design="Bold" />
+                                </HBox>
+                                <Text text="{worklistView>/aiVerdict}" wrapping="true" />
+                            </VBox>
+                        </IconTabFilter>
+
+                    </items>
+                </IconTabBar>
+
+            </VBox>
+        </content>
+        <buttons>
+            <Button
+                text="Scan &amp; Validate"
+                type="Emphasized"
+                icon="sap-icon://play"
+                press=".onVisionThenScan"
+                visible="{= !${worklistView>/visionBusy} &amp;&amp; !!${worklistView>/aiVerdict} }" />
+            <Button
+                text="Close"
+                press=".onCloseVisionDialog" />
+        </buttons>
+    </Dialog>
+
 </mvc:View>

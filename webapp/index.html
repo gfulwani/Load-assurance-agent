@@ -1,53 +1,2200 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Load Assurance Agent</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Autonomous Warehouse AI Agent</title>
+<script
+  id="sap-ui-bootstrap"
+  src="https://ui5.sap.com/1.120.0/resources/sap-ui-core.js"
+  data-sap-ui-theme="sap_horizon"
+  data-sap-ui-libs="sap.m,sap.f,sap.ui.core,sap.ui.layout"
+  data-sap-ui-compatVersion="edge"
+  data-sap-ui-async="false">
+</script>
+<style>
+  .kpiBar  { display:flex; gap:12px; padding:10px 0 4px; flex-wrap:wrap; }
+  .kpiCard { background:#fff; border:1px solid #e4e4e4; border-radius:8px;
+             padding:8px 16px; min-width:80px; text-align:center;
+             box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .kpiVal  { font-size:26px; font-weight:700; line-height:1.1; }
+  .kpiLbl  { font-size:11px; color:#6a6d70; margin-top:2px;
+             text-transform:uppercase; letter-spacing:.04em; }
+  .kpiGreen { color:#107e3e; } .kpiRed { color:#bb0000; }
+  .kpiAmber { color:#e76500; } .kpiBlue  { color:#0a6ed1; }
+  .stepDone    { color:#107e3e; line-height:2; font-size:13px; }
+  .stepPending { color:#89919a; line-height:2; font-size:13px; }
+  .chatWrap  { display:flex; flex-direction:column; height:calc(100vh - 200px); }
+  #chatMsgs  { flex:1; overflow-y:auto; padding:12px 16px; }
+  .cUser     { text-align:right; margin:6px 0; }
+  .cUser .bbl{ display:inline-block; background:#0a6ed1; color:#fff;
+               padding:7px 13px; border-radius:16px 16px 4px 16px;
+               max-width:75%; font-size:13px; }
+  .cAI       { display:flex; gap:8px; align-items:flex-start; margin:6px 0; }
+  .cAI .av   { width:26px; height:26px; border-radius:50%; background:#0a6ed1;
+               color:#fff; display:flex; align-items:center; justify-content:center;
+               font-size:10px; font-weight:700; flex-shrink:0; margin-top:2px; }
+  .cAI .bbl  { background:#f5f6f7; padding:7px 13px;
+               border-radius:16px 16px 16px 4px; max-width:80%; font-size:13px; }
 
-    <!--
-        SAP UI5 bootstrap from the CDN.
-        Replace the version tag with a fixed version (e.g. 1.120.x) for
-        production deployments; use the "latest" alias only during development.
+  /* ── Status badges ── */
+  .stBadge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
+  .stBadge-APPROVED { background:#e8f5e9; color:#1b5e20; border:1px solid #a5d6a7; }
+  .stBadge-LOADING  { background:#e3f2fd; color:#0d47a1; border:1px solid #90caf9; }
+  .stBadge-LOADED   { background:#e8eaf6; color:#283593; border:1px solid #9fa8da; }
+  .stBadge-SHIPPED  { background:#e0f7fa; color:#006064; border:1px solid #80deea; }
+  .stBadge-BLOCKED  { background:#ffebee; color:#b71c1c; border:1px solid #ef9a9a; }
+  .stBadge-REVIEW   { background:#fff8e1; color:#e65100; border:1px solid #ffe082; }
+  .stBadge-default  { background:#f5f5f5; color:#555;    border:1px solid #ddd; }
 
-        Theme:      sap_horizon  (SAP Horizon — the default Fiori 3 Next theme)
-        Libraries:  sap.m, sap.uxap, sap.ui.layout, sap.f are declared here
-                    so the bootstrap pre-loads them in parallel.  The manifest
-                    also declares them, which ensures they are loaded even when
-                    the app is embedded in a Fiori launchpad.
-    -->
-    <script
-        id="sap-ui-bootstrap"
-        src="https://ui5.sap.com/resources/sap-ui-core.js"
-        data-sap-ui-theme="sap_horizon"
-        data-sap-ui-resourceroots='{
-            "com.loadassurance.agent": "./"
-        }'
-        data-sap-ui-oninit="module:sap/ui/core/ComponentSupport"
-        data-sap-ui-compatVersion="edge"
-        data-sap-ui-async="true"
-        data-sap-ui-frameOptions="trusted"
-        data-sap-ui-libs="sap.m,sap.uxap,sap.ui.layout,sap.f"
-        data-sap-ui-logLevel="warning">
-    </script>
+  /* ── Spinner overlay ── */
+  #loadingOverlay {
+    display:none; position:fixed; inset:0; z-index:99999;
+    background:rgba(255,255,255,0.6); backdrop-filter:blur(2px);
+    align-items:center; justify-content:center; flex-direction:column; gap:12px;
+  }
+  #loadingOverlay.active { display:flex; }
+  .spinner {
+    width:44px; height:44px; border:4px solid #e0e0e0;
+    border-top-color:#0a6ed1; border-radius:50%;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #loadingLabel { font-size:13px; color:#0a6ed1; font-weight:600; }
+
+  /* ── Toast notifications ── */
+  #toastContainer {
+    position:fixed; bottom:120px; left:50%; transform:translateX(-50%);
+    z-index:99998; display:flex; flex-direction:column; gap:8px; align-items:center;
+    pointer-events:none;
+  }
+  .toast {
+    padding:10px 20px; border-radius:8px; font-size:13px; font-weight:500;
+    color:#fff; box-shadow:0 4px 16px rgba(0,0,0,0.18);
+    animation:toastIn .25s ease, toastOut .4s ease 2.6s forwards;
+    pointer-events:none; max-width:460px; text-align:center; line-height:1.5;
+  }
+  .toast-success { background:#107e3e; }
+  .toast-error   { background:#bb0000; }
+  .toast-warning { background:#e76500; }
+  .toast-info    { background:#0a6ed1; }
+  @keyframes toastIn  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+</style>
 </head>
-<body class="sapUiBody" id="content">
-    <!--
-        Declarative component support: sap/ui/core/ComponentSupport scans for
-        this element and bootstraps the Component automatically.
+<body class="sapUiBody" style="margin:0;height:100vh;">
 
-        data-sap-ui-component          — marker attribute
-        data-name                      — component name (must match Component.js location)
-        data-settings                  — JSON-encoded settings passed to UIComponent constructor
-        data-handle-validation         — let the framework show validation messages automatically
-    -->
-    <div
-        data-sap-ui-component
-        data-name="com.loadassurance.agent"
-        data-id="container"
-        data-settings='{"id" : "loadAssuranceAgent"}'
-        data-handle-validation="true"
-        style="height:100%">
+<!-- Spinner Overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div id="loadingLabel">Loading…</div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+
+<!-- Camera Modal -->
+<div id="cameraModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99998;flex-direction:column;align-items:center;justify-content:center;">
+  <div style="background:#1a1a1a;border-radius:16px;padding:20px;width:min(600px,95vw);box-shadow:0 16px 48px rgba(0,0,0,0.6);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <span style="color:#fff;font-size:16px;font-weight:600;">📷 Capture Pallet Photo</span>
+      <button onclick="closeCameraModal()" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;line-height:1;">✕</button>
     </div>
+    <video id="cameraFeed" autoplay playsinline style="width:100%;border-radius:10px;background:#000;max-height:380px;object-fit:cover;"></video>
+    <canvas id="cameraCanvas" style="display:none;"></canvas>
+    <div style="display:flex;gap:10px;margin-top:14px;justify-content:center;">
+      <button id="btnCapture" onclick="capturePhoto()" style="background:#0a6ed1;color:#fff;border:none;border-radius:8px;padding:10px 28px;font-size:15px;font-weight:600;cursor:pointer;">📸 Capture</button>
+      <button onclick="switchCamera()" style="background:#444;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer;">🔄 Switch</button>
+      <button onclick="document.getElementById('palletFile').click()" style="background:#444;color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer;">📁 File</button>
+    </div>
+  </div>
+</div>
+
+<!-- Label Mismatch Modal -->
+<div id="labelMismatchModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:24px;max-width:400px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+      <span style="font-size:24px;">⚠️</span>
+      <h3 style="margin:0;color:#0d1f35;font-size:16px;font-weight:700;">Label Mismatch Detected</h3>
+    </div>
+    <p style="color:#556b82;font-size:14px;line-height:1.6;margin-bottom:8px;">Scanned label shows <strong id="lblMismatchScanned">HU# —</strong></p>
+    <p style="color:#556b82;font-size:14px;line-height:1.6;margin-bottom:20px;">Expected <strong id="lblMismatchExpected">HU# —</strong></p>
+    <p style="color:#b45309;font-size:13px;background:#fffbeb;padding:10px 12px;border-radius:8px;border:1px solid #fde68a;margin-bottom:20px;">Please verify the correct pallet is staged for this delivery before proceeding.</p>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="closeLabelMismatch()" style="background:#0052cc;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;">OK, I'll Verify</button>
+    </div>
+  </div>
+</div>
+
+<div id="content" style="height:100%;"></div>
+<script>
+"use strict";
+
+var BASE = "/api";
+
+/* ─── spinner ──────────────────────────────────────────────────────────── */
+function showSpinner(label) {
+  var el = document.getElementById("loadingOverlay");
+  var lb = document.getElementById("loadingLabel");
+  if (lb) lb.textContent = label || "Loading…";
+  if (el) el.classList.add("active");
+}
+function hideSpinner() {
+  var el = document.getElementById("loadingOverlay");
+  if (el) el.classList.remove("active");
+}
+
+/* ─── toast ────────────────────────────────────────────────────────────── */
+function toast(msg, type) {
+  var c = document.getElementById("toastContainer");
+  if (!c) return;
+  var d = document.createElement("div");
+  d.className = "toast toast-" + (type||"info");
+  d.textContent = msg;
+  c.appendChild(d);
+  setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 3100);
+}
+function toastOK(msg)   { toast(msg, "success"); }
+function toastErr(msg)  { toast(msg, "error"); }
+function toastWarn(msg) { toast(msg, "warning"); }
+function toastInfo(msg) { toast(msg, "info"); }
+
+/* ─── status badge HTML ────────────────────────────────────────────────── */
+function statusBadge(s) {
+  if (!s) return "<span class='stBadge stBadge-default'>Not scanned</span>";
+  var cls = ["APPROVED","LOADING","LOADED","SHIPPED","BLOCKED","REVIEW"].indexOf(s) >= 0
+    ? "stBadge-"+s : "stBadge-default";
+  return "<span class='stBadge "+cls+"'>"+s+"</span>";
+}
+
+/* ─── helpers ─────────────────────────────────────────────────────────── */
+function md(t) {
+  if (!t) return "";
+  return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g,"<em>$1</em>")
+    .replace(/^#{1,3} (.+)$/gm,"<b>$1</b>")
+    .replace(/^[-•] (.+)$/gm,"• $1")
+    .replace(/\n/g,"<br/>");
+}
+function ago(dt) {
+  if (!dt) return "—";
+  var s = Math.floor((Date.now() - new Date(dt).getTime()) / 1000);
+  if (s < 60)   return "just now";
+  if (s < 3600) return Math.floor(s/60) + " min ago";
+  if (s < 86400)return Math.floor(s/3600) + " hr ago";
+  return new Date(dt).toLocaleDateString();
+}
+function showLabelMismatch(scanned, expected) {
+  document.getElementById("lblMismatchScanned").textContent = "HU# " + scanned;
+  document.getElementById("lblMismatchExpected").textContent = "HU# " + expected;
+  var m = document.getElementById("labelMismatchModal");
+  if (m) { m.style.display = "flex"; }
+}
+function closeLabelMismatch() {
+  var m = document.getElementById("labelMismatchModal");
+  if (m) { m.style.display = "none"; }
+}
+
+function api(path, body) {
+  return fetch(BASE + path, {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  }).then(function(r){
+    if (!r.ok) return r.json().then(function(e){ throw new Error((e.error&&e.error.message)||r.statusText); });
+    return r.json();
+  });
+}
+
+/* ─── state ───────────────────────────────────────────────────────────── */
+var oM, oNav;
+var scaleTimer = null;
+var palletOBD  = null;
+
+/* ─── init ────────────────────────────────────────────────────────────── */
+sap.ui.getCore().attachInit(function() {
+
+  oM = new sap.ui.model.json.JSONModel({
+    warehouse:"2001", delivery:"", scaleIP:"",
+    scaleConnected:false, scaleWeight:null, scaleStable:false, scaleUnit:"LB", scaleBaseUrl:"",
+    deliveries:[], deliveryCount:0, busy:false,
+    scanResult:null, history:[], exceptions:[],
+    palletImages:{}
+  });
+
+  /* ════════════════════════════════════════════════════════════════════
+     PAGE 1 — DELIVERY LIST
+  ════════════════════════════════════════════════════════════════════ */
+  var oTbl = new sap.m.Table("tblDeliveries", {
+    busyIndicatorDelay: 0,
+    busy: "{/busy}",
+    noDataText: "No open deliveries found. Enter a warehouse number and press Refresh.",
+    headerToolbar: new sap.m.OverflowToolbar({ content: [
+      new sap.m.Title({ text: "Open Deliveries — Warehouse {/warehouse}  ({/deliveryCount})", titleStyle:"H4" }),
+      new sap.m.ToolbarSpacer(),
+      new sap.m.SearchField({ width:"13rem", placeholder:"Filter deliveries…",
+        liveChange: function(e) {
+          var q = e.getParameter("newValue").toLowerCase();
+          oTbl.getItems().forEach(function(it){
+            var v = (it.getBindingContext()&&it.getBindingContext().getProperty("outboundDelivery")||"").toLowerCase();
+            it.setVisible(v.indexOf(q) >= 0);
+          });
+        }
+      })
+    ]}),
+    columns: [
+      new sap.m.Column({ header: new sap.m.Text({text:"Delivery"}),  width:"14%" }),
+      new sap.m.Column({ header: new sap.m.Text({text:"HUs"}),       width:"7%",  hAlign:"Center" }),
+      new sap.m.Column({ header: new sap.m.Text({text:"Last Scan"}), width:"12%", hAlign:"Center" }),
+      new sap.m.Column({ header: new sap.m.Text({text:"Status"}),    width:"13%", hAlign:"Center" }),
+      new sap.m.Column({ header: new sap.m.Text({text:"Dispatch Progress"}), width:"30%" }),
+      new sap.m.Column({ header: new sap.m.Text({text:""}),          hAlign:"End" })
+    ],
+    items: { path:"/deliveries", template: new sap.m.ColumnListItem({
+      highlight: { path:"lastStatus", formatter: function(s){
+        return s==="APPROVED"?"Success": s==="LOADING"?"Success": s==="LOADED"?"Success": s==="BLOCKED"?"Error": s==="REVIEW"?"Warning": s==="SHIPPED"?"Information":"None";
+      }},
+      cells: [
+        new sap.m.ObjectIdentifier({ title:"{outboundDelivery}" }),
+        new sap.m.ObjectNumber({
+          number:"{huCount}",
+          unit:{ path:"huCount", formatter:function(n){ return n===1?"HU":"HUs"; } }
+        }),
+        new sap.m.Text({ text:{ path:"lastScanAt", formatter:ago } }),
+        new sap.ui.core.HTML({
+          content:{ path:"lastStatus", formatter:function(s){
+            return statusBadge(s);
+          }},
+          sanitizeContent: false
+        }),
+        new sap.ui.core.HTML({
+          content:{ path:"lastStatus",
+            formatter:function(status){
+              var steps = [
+                { label:"Review",    done: !!status },
+                { label:"Ship Ready", done: status==="APPROVED"||status==="LOADING"||status==="LOADED"||status==="SHIPPED" },
+                { label:"Loading",    done: status==="LOADED"||status==="SHIPPED" },
+                { label:"GI Posted",  done: status==="SHIPPED" }
+              ];
+              var blocked = status==="BLOCKED";
+              var html = "<div style='display:flex;gap:4px;align-items:center;padding:4px 0;'>";
+              steps.forEach(function(s, i){
+                var done  = !blocked && s.done;
+                var first = i === 0;
+                var bg    = !status ? "#e8e8e8" : blocked && first ? "#bb0000" : done ? "#107e3e" : "#e8e8e8";
+                var txtColor = done || (blocked&&first) ? "#fff" : "#888";
+                html += "<div style='flex:1;text-align:center;padding:3px 2px;background:"+bg+";border-radius:4px;font-size:10px;font-weight:600;color:"+txtColor+";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>"+s.label+"</div>";
+                if (i < steps.length - 1) html += "<div style='color:#ccc;font-size:10px;'>›</div>";
+              });
+              html += "</div>";
+              return html;
+            }
+          }
+        }),
+        new sap.m.HBox({ justifyContent:"End", items:[
+          new sap.m.Button({
+            text:"Validate", type:"Emphasized", icon:"sap-icon://play",
+            customData:[new sap.ui.core.CustomData({key:"obd",value:"{outboundDelivery}"})],
+            press: function(e){
+              oM.setProperty("/delivery", e.getSource().data("obd"));
+              doScan();
+            }
+          }).addStyleClass("sapUiTinyMarginEnd"),
+          new sap.m.Button({
+            text:"Scan HU", icon:"sap-icon://camera",
+            customData:[new sap.ui.core.CustomData({key:"obd",value:"{outboundDelivery}"})],
+            press: function(e){
+              palletOBD = e.getSource().data("obd");
+              openCameraModal();
+            }
+          })
+        ]})
+      ]
+    })}
+  }).setModel(oM);
+
+  var oP1 = new sap.m.Page("p1", {
+    title: "Autonomous Warehouse AI Agent",
+    showNavButton: false,
+    subHeader: new sap.m.OverflowToolbar({ content:[
+      new sap.m.Label({ text:"Warehouse", labelFor:"inWH" }).addStyleClass("sapUiTinyMarginEnd"),
+      new sap.m.Input("inWH",{ value:"{/warehouse}", width:"5.5rem", submit:doRefresh }).addStyleClass("sapUiTinyMarginEnd"),
+      new sap.m.Label({ text:"Delivery", labelFor:"inOBD" }).addStyleClass("sapUiTinyMarginEnd"),
+      new sap.m.Input("inOBD",{ value:"{/delivery}", width:"11rem",
+        placeholder:"Enter OBD number", submit:doScan }).addStyleClass("sapUiTinyMarginEnd"),
+      new sap.m.Button({ text:"Validate", type:"Emphasized",
+        icon:"sap-icon://play", press:doScan }),
+      new sap.m.ToolbarSpacer(),
+      new sap.m.Input("inScale",{
+        value:{ path:"/scaleIP", formatter:function(ip){ return ip ? ip.replace(/^https?:\/\//i,"").replace(/\/$/,"") : ""; }},
+        width:"9rem",
+        placeholder:"Scale IP:5000", submit:doConnectScale,
+        change:function(e){ oM.setProperty("/scaleIP", e.getParameter("value").replace(/^https?:\/\//i,"").replace(/\/$/,"")); }
+      }).addStyleClass("sapUiTinyMarginEnd"),
+      new sap.m.Button({
+        text:{ parts:["/scaleConnected","/scaleWeight","/scaleUnit","/scaleStable"], formatter:function(conn,w,u,stable){
+          if(!conn) return "⚖️ Connect Scale";
+          if(w==null) return "⚖️ Connecting...";
+          return (stable?"✓ ":"~ ")+parseFloat(w).toFixed(2)+" "+(u||"KG");
+        }},
+        type:{ path:"/scaleConnected", formatter:function(b){ return b?"Success":"Default"; }},
+        press:doConnectScale
+      }).addStyleClass("sapUiTinyMarginEnd"),
+      new sap.m.Button({ text:"History",   icon:"sap-icon://history",   type:"Transparent", press:function(){ oNav.to("p3"); } }),
+      new sap.m.Button({ text:"AI Copilot",icon:"sap-icon://ai",        type:"Transparent", press:function(){ oNav.to("p4"); } }),
+      new sap.m.Button({ text:"Exceptions",icon:"sap-icon://alert",     type:"Transparent",
+        press:function(){ doRefreshExceptions(); oNav.to("p5"); } }),
+      new sap.m.Button({                   icon:"sap-icon://refresh",   type:"Transparent",
+        tooltip:"Reload deliveries", press:doRefresh })
+    ]}),
+    content:[ oTbl ]
+  }).setModel(oM);
+
+  /* ════════════════════════════════════════════════════════════════════
+     PAGE 2 — SCAN RESULT
+  ════════════════════════════════════════════════════════════════════ */
+  var oVerdict    = new sap.m.MessageStrip("msgVerdict",{ showIcon:true, showCloseButton:false }).addStyleClass("sapUiSmallMarginBottom");
+  var oKpiBand    = new sap.ui.core.HTML("kpiBand",   { content:"" });
+  var oEWMHtml    = new sap.ui.core.HTML("ewmHtml",   { content:"" });
+  var oAIFmt      = new sap.m.FormattedText("aiFmt",  { htmlText:"", width:"100%" }).addStyleClass("sapUiSmallMarginBeginEnd sapUiSmallMarginTopBottom");
+
+  var oHUTbl = new sap.m.Table("tblHUs",{
+    busyIndicatorDelay:0,
+    headerToolbar: new sap.m.OverflowToolbar({ content:[
+      new sap.m.Title("huTitle",{ text:"Handling Units", titleStyle:"H5" }),
+      new sap.m.ToolbarSpacer(),
+      new sap.m.Button({ text:"Re-validate with entered weights",
+        type:"Emphasized", icon:"sap-icon://synchronize", press:doRevalidate })
+    ]}),
+    columns:[
+      new sap.m.Column({ header:new sap.m.Text({text:"HU ID"}),         width:"17%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Status"}),         width:"10%", hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Bin"}),            width:"9%",  hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Expected LB"}),    width:"11%", hAlign:"End" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Actual LB"}),      width:"11%", hAlign:"End" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Δ %"}),            width:"9%",  hAlign:"End" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Label"}),          width:"10%", hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Stacking"}),       width:"9%",  hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Actions"}),        width:"13%", hAlign:"Center" })
+    ],
+    items:{ path:"/scanResult/huResults", template: new sap.m.ColumnListItem({
+      highlight:{ path:"status", formatter:function(s){
+        return s==="Passed"?"Success": s==="Failed"?"Error":"Warning";
+      }},
+      cells:[
+        new sap.m.Text({ text:"{huId}" }),
+        new sap.m.ObjectStatus({
+          text:{ parts:["status","palletScanned"], formatter:function(s,ps){
+            if (!ps) return "Review";
+            return s || "Review";
+          }},
+          state:{ parts:["status","palletScanned"], formatter:function(s,ps){
+            if (!ps) return "Warning";
+            return s==="Passed"?"Success": s==="Failed"?"Error":"Warning";
+          }}
+        }),
+        new sap.m.Text({ text:"{storageBin}" }),
+        new sap.m.Text({ text:{ path:"expectedWeight", formatter:function(n){ return (!n||n<=0)?"N/A":parseFloat(n).toFixed(2); } } }),
+        new sap.m.Input({ width:"5.5rem", type:"Number",
+          value:{ path:"actualWeight", formatter:function(n){ return n!=null?String(parseFloat(n).toFixed(2)):""; } },
+          change:function(e){
+            var ctx=e.getSource().getBindingContext();
+            if(ctx) ctx.getModel().setProperty(ctx.getPath()+"/actualWeight", parseFloat(e.getParameter("value"))||0);
+          }
+        }),
+        new sap.m.ObjectStatus({
+          text:{ path:"weightDeltaPct", formatter:function(n){
+            var exp=this.getBindingContext()&&this.getBindingContext().getProperty("expectedWeight");
+            if(!exp||exp<=0) return "N/A";
+            return n!=null?(n>=0?"+":"")+parseFloat(n).toFixed(1)+"%":"—";
+          }},
+          state:{ path:"weightDeltaPct", formatter:function(n){
+            var exp=this.getBindingContext()&&this.getBindingContext().getProperty("expectedWeight");
+            if(!exp||exp<=0) return "None";
+            if(n==null) return "None";
+            var a=Math.abs(n); return a>5?"Error": a>2?"Warning":"Success";
+          }}
+        }),
+        new sap.m.ObjectStatus({
+          text:{ path:"labelStatus", formatter:function(s){
+            if (!s || s === "") return "Unverified";
+            return s;
+          }},
+          state:{ path:"labelStatus", formatter:function(s){
+            if (!s || s === "") return "None";
+            var u = s.toUpperCase();
+            return u==="OK"?"Success": u==="MISSING"||u==="DAMAGED"?"Error":"Warning";
+          }}
+        }),
+        new sap.m.ObjectStatus({
+          text:{ path:"stackingCompliant", formatter:function(b){ return b===true?"OK": b===false?"Non-Compliant":"Unverified"; } },
+          state:{ path:"stackingCompliant", formatter:function(b){ return b===true?"Success": b===false?"Warning":"None"; } }
+        }),
+        new sap.m.HBox({ alignItems:"Center", justifyContent:"Center", items:[
+          new sap.m.Button({
+            icon:"sap-icon://switch-views", type:"Transparent", tooltip:"Find alternative HUs",
+            enabled:{ parts:["passed","isBlocked"], formatter:function(p,b){ return !p && !b; } },
+            customData:[new sap.ui.core.CustomData({key:"huId",value:"{huId}"})],
+            press: doFindAlternatives
+          }),
+          new sap.m.Button({
+            icon:"sap-icon://undo", type:"Transparent", tooltip:"Cancel Pick — return HU to storage",
+            enabled:{ path:"passed", formatter:function(p){ return !p; } },
+            customData:[new sap.ui.core.CustomData({key:"huId",value:"{huId}"})],
+            press: doCancelPick
+          }),
+          new sap.m.Button({
+            icon:"sap-icon://camera", type:"Transparent", tooltip:"Scan HU photo",
+            customData:[new sap.ui.core.CustomData({key:"huId",value:"{huId}"})],
+            press: function(e){
+              palletOBD = oM.getProperty("/delivery");
+              document.getElementById("palletFile")._targetHuId = e.getSource().data("huId");
+              openCameraModal();
+            }
+          }),
+          new sap.m.Button({
+            icon:"sap-icon://measure", type:"Transparent", tooltip:"Weigh this HU on connected scale",
+            customData:[new sap.ui.core.CustomData({key:"huId",value:"{huId}"})],
+            press: doWeighHU
+          }),
+          new sap.m.Button({
+            icon:"sap-icon://clinical-order", type:"Transparent", tooltip:"Diagnose block reason",
+            visible:{ path:"isBlocked", formatter:function(b){ return !!b; } },
+            customData:[new sap.ui.core.CustomData({key:"huId",value:"{huId}"})],
+            press: doDiagnoseBlock
+          })
+        ]})
+      ]
+    })}
+  }).setModel(oM);
+
+  var oP2 = new sap.m.Page("p2",{
+    title:"Scan Result",
+    showNavButton:true,
+    navButtonPress:function(){ oNav.back(); },
+    headerContent:[
+      new sap.m.Button({ text:"Re-scan",        icon:"sap-icon://refresh",      press:doScan }),
+      new sap.m.Button("btnCreatePick",{ text:"Create Pick Task", icon:"sap-icon://add-process", type:"Emphasized",
+        press:doCreatePick,
+        visible:{ path:"/scanResult/dispatchStatus", formatter:function(s){ return s!=="SHIPPED"; }}
+      }).addStyleClass("sapUiTinyMarginBegin"),
+      new sap.m.Button({ text:"Scan HU",    icon:"sap-icon://camera",
+        press:function(){ palletOBD=oM.getProperty("/delivery"); openCameraModal(); }
+      }).addStyleClass("sapUiTinyMarginBegin"),
+      new sap.m.Button({ text:"Block Dispatch", icon:"sap-icon://cancel",       type:"Reject", press:doBlock }).addStyleClass("sapUiTinyMarginBegin"),
+      new sap.m.Button("btnAlertSupervisor",{ text:"Alert Supervisor", icon:"sap-icon://alert", type:"Reject",
+        press:doAlertSupervisor,
+        visible:{ path:"/scanResult/dispatchStatus", formatter:function(s){ return s==="BLOCKED"; }}
+      }).addStyleClass("sapUiTinyMarginBegin"),
+      new sap.m.Button("btnApprove",{ text:"Approve Dispatch", icon:"sap-icon://accept", type:"Accept",
+        press:doApprove, visible:false
+      }).addStyleClass("sapUiTinyMarginBegin"),
+      new sap.m.Button("btnConfirmLoading",{ text:"Confirm Loading", icon:"sap-icon://journey-arrive", type:"Emphasized",
+        press:doConfirmLoading, visible:false
+      }).addStyleClass("sapUiTinyMarginBegin"),
+      new sap.m.Button("btnGI",{ text:"Post Goods Issue", icon:"sap-icon://shipping-status", type:"Accept",
+        press:doPostGI,
+        visible: false
+      }).addStyleClass("sapUiTinyMarginBegin")
+    ],
+    content:[ new sap.m.VBox({ items:[
+      oVerdict,
+      oKpiBand,
+      new sap.m.Panel({ headerText:"Dispatch Steps", expandable:true, expanded:true,
+        content:[ oEWMHtml ] }).addStyleClass("sapUiSmallMarginBottom"),
+      new sap.m.Panel({ headerText:"AI Analysis", expandable:true, expanded:true,
+        content:[
+          new sap.m.ObjectStatus("aiStatusBadge",{ text:"", state:"None", visible:false }).addStyleClass("sapUiSmallMarginBeginEnd sapUiSmallMarginTop"),
+          oAIFmt
+        ] }).addStyleClass("sapUiSmallMarginBottom"),
+      oHUTbl,
+      new sap.m.Panel("palletGalleryPanel",{ headerText:"📷 Pallet Images", expandable:true, expanded:true,
+        visible:false,
+        content:[ new sap.ui.core.HTML("palletGalleryHtml",{ content:"<div id='palletGallery' style='display:flex;flex-wrap:wrap;gap:12px;padding:8px 0;'></div>" }) ]
+      }).addStyleClass("sapUiSmallMarginTop"),
+      new sap.m.Panel("palletPanel",{ headerText:"Last Pallet Scan", expandable:true, expanded:true,
+        visible:false,
+        content:[
+          new sap.ui.core.HTML("palletImg",{ content:"" }),
+          new sap.m.FormattedText("palletVerdict",{ htmlText:"" }).addStyleClass("sapUiSmallMargin")
+        ]
+      }).addStyleClass("sapUiSmallMarginTop")
+    ]}).addStyleClass("sapUiSmallMarginBeginEnd") ]
+  }).setModel(oM);
+
+  /* ════════════════════════════════════════════════════════════════════
+     PAGE 3 — HISTORY
+  ════════════════════════════════════════════════════════════════════ */
+  var oHisTbl = new sap.m.Table("tblHistory",{
+    noDataText:"No scan history yet.",
+    columns:[
+      new sap.m.Column({ header:new sap.m.Text({text:"Time"}),     width:"13%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Delivery"}), width:"14%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"HUs"}),      width:"8%",  hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Verdict"}),  width:"14%", hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"AI Summary"}) })
+    ],
+    items:{ path:"/history", template: new sap.m.ColumnListItem({ cells:[
+      new sap.m.Text({ text:{ path:"time", formatter:ago } }),
+      new sap.m.Text({ text:"{delivery}" }),
+      new sap.m.Text({ text:{ path:"totalHUs", formatter:function(n){ return String(n||0); } } }),
+      new sap.m.ObjectStatus({
+        text:"{status}",
+        state:{ path:"status", formatter:function(s){
+          return s==="APPROVED"?"Success": s==="BLOCKED"?"Error":"Warning";
+        }}
+      }),
+      new sap.m.Text({ text:{ path:"aiSummary", formatter:function(s){
+        return s ? s.replace(/[*#_`]/g,"").substring(0,100)+"…" : "—";
+      }}, wrapping:false })
+    ]})},
+    headerToolbar: new sap.m.OverflowToolbar({ content:[
+      new sap.m.Title({ text:"Validation History", titleStyle:"H4" }),
+      new sap.m.ToolbarSpacer(),
+      new sap.m.SegmentedButton({ selectedKey:"{/historyFilter}",
+        items:[
+          new sap.m.SegmentedButtonItem({ key:"All",      text:"All" }),
+          new sap.m.SegmentedButtonItem({ key:"APPROVED", text:"Approved" }),
+          new sap.m.SegmentedButtonItem({ key:"BLOCKED",  text:"Blocked" }),
+          new sap.m.SegmentedButtonItem({ key:"REVIEW",   text:"Partial" })
+        ],
+        selectionChange:function(e){
+          var k=e.getParameter("item").getKey();
+          oM.setProperty("/historyFilter",k);
+          oHisTbl.getItems().forEach(function(it){
+            var s=it.getBindingContext()&&it.getBindingContext().getProperty("status");
+            it.setVisible(k==="All"||s===k);
+          });
+        }
+      }).addStyleClass("sapUiSmallMarginEnd"),
+      new sap.m.Button({ text:"Clear", icon:"sap-icon://delete", type:"Transparent",
+        press:function(){ oM.setProperty("/history",[]); toastInfo("History cleared."); }
+      })
+    ]})
+  }).setModel(oM);
+
+  var oP3 = new sap.m.Page("p3",{
+    title:"Validation History", showNavButton:true,
+    navButtonPress:function(){ oNav.back(); },
+    content:[ oHisTbl ]
+  });
+
+  /* ════════════════════════════════════════════════════════════════════
+     PAGE 4 — AI COPILOT
+  ════════════════════════════════════════════════════════════════════ */
+  var oChatHtml = new sap.ui.core.HTML("chatHtml",{
+    content:"<div id='chatMsgs'><div class='cAI'><div class='av'>AI</div><div class='bbl'>Hello! I'm your <strong>Warehouse Autonomous AI Agent</strong>. Scan a delivery or ask me anything about EWM operations.</div></div></div>",
+    preferDOM:true
+  });
+  var oChatIn = new sap.m.TextArea("chatIn",{
+    placeholder:"Ask about EWM processes, weight tolerances, dispatch rules…",
+    width:"100%", rows:2, growing:true
+  });
+  // Enter sends, Shift+Enter adds newline
+  oChatIn.addEventDelegate({ onkeydown: function(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      doChat();
+    }
+  }});
+
+  var oP4 = new sap.m.Page("p4",{
+    title:"AI Copilot", showNavButton:true,
+    navButtonPress:function(){ oNav.back(); },
+    content:[ new sap.m.VBox({ height:"calc(100vh - 200px)", items:[ oChatHtml ] }) ],
+    footer: new sap.m.Toolbar({ content:[
+      oChatIn,
+      new sap.m.Button({ text:"Send", type:"Emphasized", icon:"sap-icon://paper-plane",
+        press:doChat }).addStyleClass("sapUiTinyMarginBegin")
+    ]})
+  });
+
+  /* ════════════════════════════════════════════════════════════════════
+     PAGE 5 — EXCEPTION DASHBOARD
+  ════════════════════════════════════════════════════════════════════ */
+  var oExcTbl = new sap.m.Table("tblExceptions",{
+    busyIndicatorDelay:0,
+    noDataText:"No active exceptions. All scanned deliveries are clear.",
+    columns:[
+      new sap.m.Column({ header:new sap.m.Text({text:"Time"}),         width:"10%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Delivery"}),     width:"12%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"HU ID"}),        width:"14%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Exception"}),    width:"13%", hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Severity"}),     width:"9%",  hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Status"}),       width:"9%",  hAlign:"Center" }),
+      new sap.m.Column({ header:new sap.m.Text({text:"Est. Time"}),    width:"11%" }),
+      new sap.m.Column({ header:new sap.m.Text({text:""}),             width:"9%",  hAlign:"End" })
+    ],
+    items:{ path:"/exceptions", template: new sap.m.ColumnListItem({
+      highlight:{ path:"severity", formatter:function(s){
+        return s==="Critical"||s==="High"?"Error": s==="Medium"?"Warning":"Information";
+      }},
+      cells:[
+        new sap.m.Text({ text:{ path:"scannedAt", formatter:ago } }),
+        new sap.m.ObjectIdentifier({ title:"{outboundDelivery}" }),
+        new sap.m.Text({ text:"{huId}" }),
+        new sap.m.ObjectStatus({
+          text:"{exceptionType}",
+          state:{ path:"exceptionType", formatter:function(t){
+            return t==="BLOCKED"||t==="CLOSED"?"Error":"Warning";
+          }}
+        }),
+        new sap.m.ObjectStatus({
+          text:"{severity}",
+          state:{ path:"severity", formatter:function(s){
+            return s==="Critical"||s==="High"?"Error": s==="Medium"?"Warning":"Success";
+          }}
+        }),
+        new sap.m.ObjectStatus({
+          text:"{resolvedBy}",
+          state:{ path:"resolvedBy", formatter:function(s){
+            return s==="PENDING"?"Error": s==="AGENT"||s==="INCIDENT"?"Success":"Warning";
+          }}
+        }),
+        new sap.m.Text({ text:{ path:"resolutionAction", formatter:function(ra){
+          var m = ra && ra.match(/(\d+[-–]\d+\s*min|\d+\s*min)/i);
+          return m ? m[0] : "—";
+        }}}),
+        new sap.m.Button({
+          text:"Resolve", type:"Emphasized", icon:"sap-icon://accept",
+          customData:[
+            new sap.ui.core.CustomData({key:"huId",    value:"{huId}"}),
+            new sap.ui.core.CustomData({key:"excType", value:"{exceptionType}"}),
+            new sap.ui.core.CustomData({key:"scanId",  value:"{scanId}"}),
+            new sap.ui.core.CustomData({key:"wh",      value:"{warehouse}"})
+          ],
+          press: doResolveExceptionRow
+        })
+      ]
+    })}
+  }).setModel(oM);
+
+  var oExcRefreshStatus = new sap.m.ObjectStatus("excRefreshStatus",{ text:"Not yet loaded", state:"None" });
+
+  var oP5 = new sap.m.Page("p5",{
+    title:"Exception Dashboard",
+    showNavButton:true,
+    navButtonPress:function(){ oNav.back(); },
+    headerContent:[
+      oExcRefreshStatus,
+      new sap.m.Button({ text:"Refresh", icon:"sap-icon://refresh", type:"Transparent", press:doRefreshExceptions })
+    ],
+    content:[ oExcTbl ]
+  }).setModel(oM);
+
+  /* ════════════════════════════════════════════════════════════════════
+     ASSEMBLE
+  ════════════════════════════════════════════════════════════════════ */
+  oNav = new sap.m.NavContainer("nav",{ pages:[oP1,oP2,oP3,oP4,oP5] }).setModel(oM);
+  oNav.attachAfterNavigate(function(e){
+    var toId = e.getParameter("to")&&e.getParameter("to").getId();
+    if(toId==="p5"){
+      doRefreshExceptions();
+      if(!excRefreshTimer) excRefreshTimer=setInterval(doRefreshExceptions,30000);
+    } else {
+      if(excRefreshTimer){ clearInterval(excRefreshTimer); excRefreshTimer=null; }
+    }
+  });
+  new sap.m.Shell("shell",{ title:"Autonomous Warehouse AI Agent", app:oNav }).placeAt("content");
+
+  // hidden pallet file input
+  var fi = document.createElement("input");
+  fi.type="file"; fi.id="palletFile"; fi.accept="image/*";
+  fi.capture="environment"; fi.style.display="none";
+  fi.onchange = doPalletFile;
+  document.body.appendChild(fi);
+
+  doRefresh();
+
+}); // attachInit
+
+
+/* ─── camera ───────────────────────────────────────────────────────────── */
+
+var _cameraStream = null;
+var _cameraFacing = 'environment';
+
+function openCameraModal() {
+  var modal = document.getElementById('cameraModal');
+  modal.style.display = 'flex';
+  _startCamera();
+}
+
+function closeCameraModal() {
+  _stopCamera();
+  document.getElementById('cameraModal').style.display = 'none';
+}
+
+function _startCamera() {
+  _stopCamera();
+  var constraints = { video: { facingMode: _cameraFacing, width: { ideal: 1280 }, height: { ideal: 720 } } };
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(function(stream) {
+      _cameraStream = stream;
+      var v = document.getElementById('cameraFeed');
+      v.srcObject = stream;
+    })
+    .catch(function(e) {
+      closeCameraModal();
+      toastWarn('Camera not available — use file picker instead.');
+      document.getElementById('palletFile').click();
+    });
+}
+
+function _stopCamera() {
+  if (_cameraStream) {
+    _cameraStream.getTracks().forEach(function(t){ t.stop(); });
+    _cameraStream = null;
+  }
+}
+
+function switchCamera() {
+  _cameraFacing = _cameraFacing === 'environment' ? 'user' : 'environment';
+  _startCamera();
+}
+
+function capturePhoto() {
+  var v = document.getElementById('cameraFeed');
+  var c = document.getElementById('cameraCanvas');
+  c.width = v.videoWidth;
+  c.height = v.videoHeight;
+  c.getContext('2d').drawImage(v, 0, 0);
+  closeCameraModal();
+  c.toBlob(function(blob) {
+    var file = new File([blob], 'pallet-capture.jpg', { type: 'image/jpeg' });
+    var dt = new DataTransfer();
+    dt.items.add(file);
+    var fi = document.getElementById('palletFile');
+    fi.files = dt.files;
+    fi.dispatchEvent(new Event('change'));
+  }, 'image/jpeg', 0.92);
+}
+
+/* ─── actions ─────────────────────────────────────────────────────────── */
+
+function doRefresh() {
+  var wh = oM.getProperty("/warehouse")||"2001";
+  oM.setProperty("/busy",true);
+  showSpinner("Loading deliveries…");
+  api("/getDeliveries",{ warehouse:wh })
+    .then(function(data){
+      var list = (data.value||data||[]).map(function(d){
+        return { outboundDelivery:d.outboundDelivery, huCount:d.huCount,
+                 lastStatus:"", lastScanAt:"" };
+      });
+      (oM.getProperty("/history")||[]).forEach(function(h){
+        var r=list.find(function(d){ return d.outboundDelivery===h.delivery; });
+        if(r){ r.lastStatus=h.status; r.lastScanAt=h.time; }
+      });
+      oM.setProperty("/deliveries",    list);
+      oM.setProperty("/deliveryCount", list.length);
+      oM.setProperty("/busy",          false);
+      hideSpinner();
+    })
+    .catch(function(e){
+      oM.setProperty("/busy",false);
+      hideSpinner();
+      toastErr("Load failed: "+e.message);
+    });
+}
+
+function doScan() {
+  var wh  = oM.getProperty("/warehouse")||"2001";
+  var obd = (oM.getProperty("/delivery")||"").trim();
+  if (!obd){ toastWarn("Enter a delivery number first."); return; }
+  oM.setProperty("/busy",true);
+  showSpinner("Scanning delivery "+obd+"…");
+
+  // Clear previous pallet scan result so it doesn't show for the new delivery
+  var pImg = sap.ui.getCore().byId("palletImg");
+  var pVerd = sap.ui.getCore().byId("palletVerdict");
+  var pPanel = sap.ui.getCore().byId("palletPanel");
+  if (pImg)   pImg.setContent("");
+  if (pVerd)  pVerd.setHtmlText("");
+  if (pPanel) pPanel.setVisible(false);
+  // Only clear gallery images when switching to a different delivery
+  var prevDelivery = oM.getProperty("/lastScannedDelivery");
+  if (prevDelivery && prevDelivery !== obd) {
+    oM.setProperty("/palletImages", {});
+  }
+  oM.setProperty("/lastScannedDelivery", obd);
+  var rawW  = parseFloat(oM.getProperty("/scaleWeight"))||0;
+  var srcU  = oM.getProperty("/scaleUnit")||"KG";
+  api("/scanDelivery",{
+    outboundDelivery:obd, warehouse:wh,
+    scaleWeight:{ weight:parseFloat(rawW.toFixed(3))||0,
+                  unit:srcU, stable:!!oM.getProperty("/scaleStable") }
+  })
+  .then(function(d){
+    var r = d.value!==undefined ? d.value : d;
+    // Auto-set step1_reviewed when all HUs have passed
+    r.dispatch = r.dispatch || {};
+    var reviewCount = (r.reviewHUs||0) + (r.failedHUs||0);
+    if (reviewCount === 0 && (r.totalHUs||0) > 0) {
+      r.dispatch.step1_reviewed = true;
+    }
+    // Mark all HUs as not yet pallet-scanned
+    (r.huResults || []).forEach(function(hu){ hu.palletScanned = false; });
+    oM.setProperty("/scanResult", r);
+    oM.setProperty("/busy", false);
+    hideSpinner();
+    renderResult(r);
+
+    var hist = oM.getProperty("/history")||[];
+    hist.unshift({ time:new Date().toISOString(), delivery:obd,
+      totalHUs:r.totalHUs, status:r.dispatchStatus, aiSummary:r.aiSummary });
+    oM.setProperty("/history", hist);
+
+    var dlvs = oM.getProperty("/deliveries")||[];
+    var row  = dlvs.find(function(x){ return x.outboundDelivery===obd; });
+    if(row){
+      row.lastStatus=r.dispatchStatus; row.lastScanAt=new Date().toISOString();
+    } else {
+      // delivery not in worklist — add it
+      dlvs.unshift({ outboundDelivery:obd, huCount:r.totalHUs||0,
+                     lastStatus:r.dispatchStatus, lastScanAt:new Date().toISOString() });
+    }
+    oM.setProperty("/deliveries", dlvs);
+
+    oNav.to("p2");
+  })
+  .catch(function(e){
+    oM.setProperty("/busy",false);
+    hideSpinner();
+    toastErr("Scan failed: "+e.message);
+  });
+}
+
+function renderResult(r) {
+  if (!r) return;
+  sap.ui.getCore().byId("p2").setTitle("Delivery "+(oM.getProperty("/delivery") || r.outboundDelivery||"")+" — Scan Result");
+
+  // Always recompute counts from actual HU rows — never trust stale backend numbers
+  var hus = r.huResults || [];
+  var totalHUs   = hus.length || r.totalHUs  || 0;
+  var passedHUs  = hus.filter(function(h){ return h.status === "Passed";  }).length;
+  var failedHUs  = hus.filter(function(h){ return h.status === "Failed";  }).length;
+  var reviewHUs  = hus.filter(function(h){ return h.status === "Review";  }).length;
+  var blockedHUs = hus.filter(function(h){ return !!h.isBlocked; }).length;
+  // Keep r counts in sync so other code (doApprove etc.) stays consistent
+  r.totalHUs  = totalHUs;
+  r.passedHUs = passedHUs;
+  r.failedHUs = failedHUs;
+  r.reviewHUs = reviewHUs;
+
+  // verdict banner — Rule 1: driven by live HU counts, not backend dispatchStatus string
+  var strip = sap.ui.getCore().byId("msgVerdict");
+  var s = r.dispatchStatus||"";
+  var bannerState, bannerText;
+  if (s==="SHIPPED"){
+    bannerState = "Success";
+    bannerText  = "🚚 SHIPPED — Goods Issue posted. Delivery closed. Vehicle cleared for departure.";
+  } else if (failedHUs > 0) {
+    bannerState = "Error";
+    bannerText  = "❌ BLOCKED — "+failedHUs+" HU(s) failed, "+passedHUs+"/"+totalHUs+" passed";
+  } else if (reviewHUs > 0) {
+    bannerState = "Warning";
+    bannerText  = "⚠️ PENDING REVIEW — "+reviewHUs+" HU(s) require review, "+passedHUs+"/"+totalHUs+" passed";
+  } else if (passedHUs > 0 && passedHUs === totalHUs) {
+    bannerState = "Success";
+    bannerText  = "✅ APPROVED — All "+totalHUs+" HU(s) passed";
+  } else {
+    bannerState = "Warning";
+    bannerText  = "⚠️ PARTIAL — "+passedHUs+"/"+totalHUs+" HUs ready";
+  }
+  strip.setType(bannerState);
+  strip.setText(bannerText);
+
+  // KPIs — live counts
+  sap.ui.getCore().byId("kpiBand").setContent(
+    "<div class='kpiBar'>"+
+    kpi(totalHUs,   "Total",   "kpiBlue")+
+    kpi(passedHUs,  "Passed",  "kpiGreen")+
+    kpi(failedHUs,  "Failed",  "kpiRed")+
+    kpi(reviewHUs,  "Review",  "kpiAmber")+
+    kpi(blockedHUs, "Blocked", "kpiRed")+
+    "</div>"
+  );
+
+  // Dispatch steps
+  var d = r.dispatch||{};
+  var reviewCount = failedHUs + reviewHUs;
+  // Rule 2: Step 1 strictly complete only when failedCount===0 AND reviewCount===0 AND passedCount>0
+  // Supervisor override: if step2 was already set in EWM (approveDispatch succeeded), treat step1 as done
+  var step1Done = (failedHUs === 0 && reviewHUs === 0 && passedHUs > 0) || !!(d.step2_shippingReady) || !!(d.step1_reviewed);
+  // Step 2+ driven by EWM API confirmations
+  var step2Done = step1Done && !!(d.step2_shippingReady);
+  var step3Done = step2Done && !!(d.step3_loadingActivated);
+  var step4Done = step3Done && !!(d.step5_giPosted);
+  sap.ui.getCore().byId("ewmHtml").setContent(
+    "<div style='padding:6px 0;display:flex;flex-direction:column;gap:6px;'>"+
+    stv2(step1Done, false, "1", "🔍", "Review Pallets",
+      step1Done ? "All "+totalHUs+" handling unit(s) verified." : reviewCount+" handling unit(s) require review.")+
+    stv2(step2Done, false, "2", "✅", "Shipping Readiness Set",
+      "Confirm shipment readiness in EWM.")+
+    stv2(step3Done, !step2Done, "3", "🚛", "Loading Confirmed",
+      "Confirm handling units are loaded onto vehicle.")+
+    stv2(step4Done, !step3Done, "4", "📦", "Goods Issue Posted",
+      "Complete outbound delivery and update inventory.")+
+    (step4Done?"<div style='color:#107e3e;font-weight:bold;margin-top:8px;padding:6px 10px;background:#f0faf0;border-radius:6px;'>✅ Vehicle cleared for departure</div>":"")+
+    (d.errors?"<div style='color:#bb0000;font-size:12px;margin-top:4px;'>⚠ "+d.errors+"</div>":"")+
+    "</div>"
+  );
+
+  // Picking not started — override everything with a prompt to create a pick task
+  if (r.pickingNotStarted) {
+    strip.setType("Information");
+    strip.setText("📦 PICKING NOT STARTED — No handling units assigned yet");
+    sap.ui.getCore().byId("kpiBand").setContent(
+      "<div style='padding:10px 0;font-size:14px;color:#555;'>"+
+        "Delivery <strong>"+(r.outboundDelivery||"")+"</strong> has no handling units. "+
+        "Use <strong>Create Pick Task</strong> in the toolbar to begin picking."+
+      "</div>"
+    );
+    sap.ui.getCore().byId("ewmHtml").setContent(
+      "<div style='color:#888;font-size:13px;padding:8px;'>Dispatch steps will appear once picking is underway.</div>"
+    );
+    var aiStatus = sap.ui.getCore().byId("aiStatusBadge");
+    if (aiStatus) aiStatus.setVisible(false);
+    sap.ui.getCore().byId("aiFmt").setHtmlText(md(r.aiSummary||""));
+    sap.ui.getCore().byId("huTitle").setText("Handling Units (0)");
+    renderGallery();
+    return;
+  }
+
+  // AI Analysis — Rule 5: status badge (ObjectStatus) above AI text, matching banner
+  var aiStatus = sap.ui.getCore().byId("aiStatusBadge");
+  if (aiStatus) {
+    if (s === "SHIPPED") {
+      aiStatus.setText("SHIPPED").setState("Success").setVisible(true);
+    } else if (failedHUs > 0) {
+      aiStatus.setText("BLOCKED").setState("Error").setVisible(true);
+    } else if (reviewHUs > 0) {
+      aiStatus.setText("PENDING REVIEW").setState("Warning").setVisible(true);
+    } else if (passedHUs > 0 && passedHUs === totalHUs) {
+      aiStatus.setText("APPROVED").setState("Success").setVisible(true);
+    } else {
+      aiStatus.setVisible(false);
+    }
+  }
+  sap.ui.getCore().byId("aiFmt").setHtmlText(md(r.aiSummary||"No AI analysis available."));
+
+  // HU table title + apply vision findings to HU rows
+  sap.ui.getCore().byId("huTitle").setText("Handling Units ("+totalHUs+")");
+  var vf = r.visionFindings || r.agents && r.agents.vision;
+  if (vf && r.huResults) {
+    var visionLabel    = vf.labelDamage    ? "DAMAGED" : vf.missingLabels ? "MISSING" : null;
+    var visionStacking = vf.stackingCompliant === false ? false : null;
+    r.huResults.forEach(function(hu) {
+      if (visionLabel    && hu.labelStatus === "OK") hu.labelStatus = visionLabel;
+      if (visionStacking === false)                  hu.stackingCompliant = false;
+    });
+    oM.setProperty("/scanResult/huResults", r.huResults);
+  }
+
+  // Refresh pallet gallery cards
+  renderGallery();
+
+  // Imperatively set dispatch button visibility (model bindings with closures don't re-evaluate)
+  var d2 = !!(r.dispatch && r.dispatch.step2_shippingReady);
+  var d3 = !!(r.dispatch && r.dispatch.step3_loadingActivated);
+  var d4 = !!(r.dispatch && r.dispatch.step4_vehicleLoaded);
+  var d5 = !!(r.dispatch && r.dispatch.step5_giPosted);
+  var shipped = r.dispatchStatus === "SHIPPED";
+  var blocked  = r.dispatchStatus === "BLOCKED";
+  var btnApprove = sap.ui.getCore().byId("btnApprove");
+  var btnConfirm = sap.ui.getCore().byId("btnConfirmLoading");
+  var btnGI = sap.ui.getCore().byId("btnGI");
+  var btnCreate = sap.ui.getCore().byId("btnCreatePick");
+  var btnAlert = sap.ui.getCore().byId("btnAlertSupervisor");
+  if (btnApprove)  btnApprove.setVisible(!d2 && !d5 && !shipped && !blocked);
+  if (btnConfirm)  btnConfirm.setVisible(d2 && !d3 && !d5 && !shipped && !blocked);
+  if (btnGI)       btnGI.setVisible(d3 && !d5 && !blocked);
+  if (btnCreate)   btnCreate.setVisible(!shipped);
+  if (btnAlert)    btnAlert.setVisible(blocked);
+}
+
+function kpi(n, lbl, cls) {
+  return "<div class='kpiCard'><div class='kpiVal "+cls+"'>"+(n||0)+"</div><div class='kpiLbl'>"+lbl+"</div></div>";
+}
+function st(done, lbl) {
+  return done
+    ? "<div class='stepDone'>✅ "+lbl+"</div>"
+    : "<div class='stepPending'>⏳ "+lbl+" — Pending</div>";
+}
+function stv2(done, locked, num, icon, title, desc) {
+  var bg    = done   ? "#f0faf0" : locked ? "#f5f5f5" : "#fffbe6";
+  var color = done   ? "#107e3e" : locked ? "#999"    : "#b45309";
+  var badge = done   ? "<span style='background:#107e3e;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:8px;'>✅ Complete</span>"
+            : locked ? "<span style='background:#ccc;color:#555;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:8px;'>🔒 Locked</span>"
+            :          "<span style='background:#f57c00;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:8px;'>⏳ Pending</span>";
+  return "<div style='display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:"+bg+";border-radius:8px;border-left:4px solid "+(done?"#107e3e":locked?"#ccc":"#f57c00")+";'>"+
+    "<div style='font-size:22px;line-height:1;'>"+icon+"</div>"+
+    "<div style='flex:1;'>"+
+      "<div style='font-weight:600;color:"+color+";font-size:13px;'>Step "+num+" — "+title+badge+"</div>"+
+      "<div style='font-size:12px;color:#555;margin-top:2px;'>"+desc+"</div>"+
+    "</div></div>";
+}
+
+function doCreatePick() {
+  var obd = oM.getProperty("/delivery"), wh = oM.getProperty("/warehouse");
+  if (!obd) return;
+  oM.setProperty("/busy", true);
+  showSpinner("Creating pick task…");
+  api("/createPick", { outboundDelivery: obd, warehouse: wh })
+    .then(function(d) {
+      oM.setProperty("/busy", false);
+      hideSpinner();
+      var v = d.value || d;
+      if (v.warehouseTaskNumber) {
+        toastOK("Pick task " + v.warehouseTaskNumber + " created — re-scan to validate HUs.");
+      } else {
+        toastInfo(v.message || "Pick task created — re-scan to validate HUs.");
+      }
+    })
+    .catch(function(e) {
+      oM.setProperty("/busy", false);
+      hideSpinner();
+      toastErr("Could not create pick task: " + (e.message || e));
+    });
+}
+
+function doApprove() {
+  var obd=oM.getProperty("/delivery"), wh=oM.getProperty("/warehouse");
+  if(!obd) return;
+  oM.setProperty("/busy",true);
+  showSpinner("Approving dispatch…");
+  api("/approveDispatch",{ outboundDelivery:obd, warehouse:wh })
+    .then(function(d){
+      oM.setProperty("/busy",false);
+      hideSpinner();
+      var v=d.value||d;
+      var sr=oM.getProperty("/scanResult")||{};
+      sr.dispatch = sr.dispatch||{};
+      sr.dispatch.step1_reviewed = true;
+      sr.dispatch.step2_shippingReady = !!(v.shippingReadySet);
+      sr.dispatchStatus = "APPROVED";
+      // Update worklist row
+      var obd = oM.getProperty("/delivery");
+      var dlvs = oM.getProperty("/deliveries")||[];
+      var row = dlvs.find(function(d){ return d.outboundDelivery===obd; });
+      if (row) { row.lastStatus="APPROVED"; row.lastScanAt=new Date().toISOString(); }
+      oM.setProperty("/deliveries", dlvs);
+      // Clear Review HUs — supervisor override
+      var reviewed=0;
+      (sr.huResults||[]).forEach(function(hu){
+        if(hu.status==="Review"){ hu.status="Passed"; hu.passed=true; reviewed++; }
+      });
+      sr.passedHUs=(sr.passedHUs||0)+reviewed; sr.reviewHUs=0;
+      oM.setProperty("/scanResult",sr);
+      renderResult(sr);
+      var msg = v.shippingReadySet
+        ? "✅ Step 2 done — Shipping readiness set in EWM. Use Confirm Loading next."
+        : "⚠️ " + (v.message||"Approve attempted — check SAP.");
+      v.shippingReadySet ? toastOK(msg) : toastWarn(msg);
+      if((v.errors||[]).length) toastWarn("⚠️ "+(v.errors).join(" | "));
+    }).catch(function(e){ oM.setProperty("/busy",false); hideSpinner(); toastErr("Approve failed: "+e.message); });
+}
+
+function doBlock() {
+  var obd=oM.getProperty("/delivery"), wh=oM.getProperty("/warehouse");
+  if(!obd) return;
+  showSpinner("Blocking dispatch…");
+  api("/blockDispatch",{ outboundDelivery:obd, warehouse:wh, reason:"Operator blocked via UI" })
+    .then(function(d){
+      hideSpinner();
+      toastErr(d.message||"Delivery blocked.");
+      var sr=oM.getProperty("/scanResult")||{};
+      sr.dispatchStatus="BLOCKED";
+      var obdB = oM.getProperty("/delivery");
+      var dlvsB = oM.getProperty("/deliveries")||[];
+      var rowB = dlvsB.find(function(d){ return d.outboundDelivery===obdB; });
+      if (rowB) { rowB.lastStatus="BLOCKED"; rowB.lastScanAt=new Date().toISOString(); }
+      oM.setProperty("/deliveries", dlvsB);
+      // Reset all dispatch step flags so steps re-lock correctly
+      sr.dispatch = { step1_reviewed: false, step2_shippingReady: false, step3_loadingActivated: false, step4_vehicleLoaded: false, step5_giPosted: false };
+      oM.setProperty("/scanResult", sr);
+      renderResult(sr);
+    }).catch(function(e){ hideSpinner(); toastErr("Block failed: "+e.message); });
+}
+
+function doConfirmVehicleLoad() {
+  var obd=oM.getProperty("/delivery");
+  if(!obd) return;
+  if(!confirm("Confirm all handling units for delivery "+obd+" are physically loaded onto the vehicle?")) return;
+  var sr=oM.getProperty("/scanResult")||{};
+  sr.dispatch=sr.dispatch||{};
+  sr.dispatch.step4_vehicleLoaded = true;
+  var obdV = oM.getProperty("/delivery");
+  var dlvsV = oM.getProperty("/deliveries")||[];
+  var rowV = dlvsV.find(function(d){ return d.outboundDelivery===obdV; });
+  if (rowV) { rowV.lastStatus="LOADING"; rowV.lastScanAt=new Date().toISOString(); }
+  oM.setProperty("/deliveries", dlvsV);
+  oM.setProperty("/scanResult",sr);
+  renderResult(sr);
+  toastOK("✅ Step 4 done — Vehicle loaded. Use Post Goods Issue to close the delivery.");
+}
+
+function doPostGI() {
+  var obd=oM.getProperty("/delivery"), wh=oM.getProperty("/warehouse");
+  if(!obd) return;
+  var sr=oM.getProperty("/scanResult")||{};
+  if (!sr.dispatch||!sr.dispatch.step3_loadingActivated) {
+    toastWarn("Complete Step 3 first — Confirm Loading onto vehicle.");
+    return;
+  }
+  oM.setProperty("/busy",true);
+  showSpinner("Posting Goods Issue…");
+  api("/postGoodsIssue",{ handlingUnitId:"", outboundDelivery:obd, warehouseNumber:wh })
+    .then(function(d){
+      oM.setProperty("/busy",false);
+      hideSpinner();
+      var v=d.value||d;
+      if(v.success){
+        var sr=oM.getProperty("/scanResult")||{};
+        sr.dispatch=sr.dispatch||{};
+        sr.dispatch.step5_giPosted=true;
+        sr.dispatchStatus="SHIPPED";
+        oM.setProperty("/scanResult",sr);
+        renderResult(sr);
+        var dlvs=oM.getProperty("/deliveries")||[];
+        var row=dlvs.find(function(x){ return x.outboundDelivery===obd; });
+        if(row){ row.lastStatus="SHIPPED"; oM.setProperty("/deliveries",dlvs); }
+        toastOK("✅ Goods Issue posted — delivery closed. Vehicle cleared for departure.");
+      } else {
+        toastErr("GI failed: "+(v.message||""));
+      }
+    }).catch(function(e){ oM.setProperty("/busy",false); hideSpinner(); toastErr("GI error: "+e.message); });
+}
+
+function doConfirmLoading() {
+  var obd=oM.getProperty("/delivery"), wh=oM.getProperty("/warehouse");
+  if(!obd) return;
+  var sr=oM.getProperty("/scanResult")||{};
+  if (!sr.dispatch||!sr.dispatch.step2_shippingReady) {
+    toastWarn("Complete Step 2 first — Approve Dispatch to set shipping readiness.");
+    return;
+  }
+  oM.setProperty("/busy",true);
+  showSpinner("Confirming loading…");
+  api("/confirmLoading",{ outboundDelivery:obd, warehouse:wh })
+    .then(function(d){
+      oM.setProperty("/busy",false);
+      hideSpinner();
+      var v = (d.value && typeof d.value === 'object') ? d.value : d;
+      var sr=oM.getProperty("/scanResult")||{};
+      sr.dispatch=sr.dispatch||{};
+      sr.dispatch.step3_loadingActivated = !!(v.loadingActivated || v.success);
+      oM.setProperty("/scanResult",sr);
+      renderResult(sr);
+      var msg = (v.loadingActivated || v.success)
+        ? "✅ Step 3 done — Loading confirmed. Use Post Goods Issue to close the delivery."
+        : "⚠️ Loading confirmation failed — check EWM. " + ((v.messages||[]).join(" | ") || v.message || "");
+      (v.loadingActivated || v.success) ? toastOK(msg) : toastWarn(msg);
+    }).catch(function(e){
+      oM.setProperty("/busy",false);
+      hideSpinner();
+      toastErr("Confirm loading failed: "+e.message);
+    });
+}
+
+function doRevalidate() {
+  var obd = oM.getProperty("/delivery"), wh = oM.getProperty("/warehouse");
+  if (!obd) { toastWarn("No delivery selected."); return; }
+
+  // Recalculate delta % locally from current model weights — no EWM re-fetch
+  var hus = oM.getProperty("/scanResult/huResults") || [];
+  var passed = 0, failed = 0, review = 0;
+  hus.forEach(function(hu, i) {
+    var exp = parseFloat(hu.expectedWeight) || 0;
+    var act = parseFloat(hu.actualWeight)   || 0;
+    if (exp <= 0) { oM.setProperty("/scanResult/huResults/"+i+"/weightDeltaPct", null); return; }
+    var pct = (act - exp) / exp * 100;
+    oM.setProperty("/scanResult/huResults/"+i+"/weightDeltaPct", parseFloat(pct.toFixed(2)));
+    var absPct = Math.abs(pct);
+    var status = absPct <= 2 ? "Passed" : absPct <= 5 ? "Review" : "Failed";
+    oM.setProperty("/scanResult/huResults/"+i+"/status", status);
+    oM.setProperty("/scanResult/huResults/"+i+"/passed", status === "Passed");
+    if (status === "Passed") passed++;
+    else if (status === "Failed") failed++;
+    else review++;
+  });
+
+  // Update summary counts
+  var sr = oM.getProperty("/scanResult") || {};
+  sr.dispatch = sr.dispatch || {};
+  sr.passedHUs  = passed;
+  sr.failedHUs  = failed;
+  sr.reviewHUs  = review;
+  sr.totalHUs   = hus.length;
+  var dispatchStatus = failed > 0 ? "BLOCKED" : passed === hus.length ? "APPROVED" : "REVIEW";
+  sr.dispatchStatus  = dispatchStatus;
+  // Auto-complete step 1 if all passed
+  if (failed === 0 && review === 0 && hus.length > 0) sr.dispatch.step1_reviewed = true;
+  oM.setProperty("/scanResult", sr);
+  renderResult(sr);
+  toastInfo("Re-validated — " + passed + " passed, " + failed + " failed, " + review + " review.");
+}
+
+function doConnectScale() {
+  var ip = oM.getProperty("/scaleIP");
+  if (!ip) { toastWarn("Enter Scale IP first (e.g. 10.24.183.76:5000)"); return; }
+  // Normalize — strip protocol/trailing slash so field always shows clean IP
+  ip = ip.trim().replace(/^https?:\/\//i,"").replace(/\/$/,"");
+  oM.setProperty("/scaleIP", ip);
+  if (oM.getProperty("/scaleConnected")) {
+    if (scaleTimer) { clearInterval(scaleTimer); scaleTimer = null; }
+    oM.setProperty("/scaleConnected", false); oM.setProperty("/scaleWeight", null);
+    toastInfo("Scale disconnected."); return;
+  }
+  var clean   = ip.trim();
+  var baseUrl = clean.startsWith("http") ? clean.replace(/\/$/, "") : "http://" + clean;
+  // Connect directly from browser — scale must be on same network as client device
+  fetch(baseUrl + "/weight", { signal: AbortSignal.timeout(3000) })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      oM.setProperty("/scaleConnected", true);
+      oM.setProperty("/scaleBaseUrl", baseUrl);
+      toastOK("⚖️ Scale connected — " + clean);
+      scaleTimer = setInterval(function(){
+        fetch(baseUrl + "/weight", { signal: AbortSignal.timeout(2000) })
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            if (d.weight != null) {
+              oM.setProperty("/scaleWeight", parseFloat(d.weight).toFixed(2));
+              oM.setProperty("/scaleStable", !!d.stable);
+              oM.setProperty("/scaleUnit",   (d.unit || "LB").toUpperCase());
+            }
+          }).catch(function(){});
+      }, 400);
+    }).catch(function(e){ toastErr("Scale failed: cannot reach " + clean + " — is Flask running?"); });
+}
+
+// Normalise raw CAP scanPallet response → flat display object.
+// The CAP handler now returns structured fields; issues/labelTextsRead are JSON strings.
+function normPalletResult(raw) {
+  // Parse JSON-stringified arrays back to arrays
+  var issues = raw.issues;
+  if (typeof issues === "string") {
+    try { issues = JSON.parse(issues); } catch(e) { issues = issues ? [issues] : []; }
+  }
+  if (!Array.isArray(issues)) issues = [];
+
+  var labelTexts = raw.labelTextsRead;
+  if (typeof labelTexts === "string") {
+    try { labelTexts = JSON.parse(labelTexts); } catch(e) { labelTexts = []; }
+  }
+  if (!Array.isArray(labelTexts)) labelTexts = [];
+
+  // confidenceNum is Decimal from CDS (0.0–1.0)
+  var confNum = parseFloat(raw.confidenceNum) || parseFloat(raw.confidence) || 0.85;
+  // "HIGH"/"MEDIUM"/"LOW" → number fallback
+  if (isNaN(confNum) || confNum > 1) {
+    confNum = raw.confidence === "HIGH" ? 0.92 : raw.confidence === "MEDIUM" ? 0.70 : 0.85;
+  }
+
+  return {
+    verdict:          (raw.verdict || "REVIEW").toUpperCase(),
+    confidence:       confNum,
+    palletCondition:  raw.palletCondition || "GOOD",
+    wrapIntegrity:    raw.wrapIntegrity   || "REVIEW",
+    stackingCompliant: raw.stackingCompliant !== false,
+    huLabelDetected:  !!raw.huLabelDetected,
+    huLabelReadable:  !!raw.huLabelReadable,
+    issues:           issues,
+    recommendation:   raw.recommendation || (raw.aiVerdict ? raw.aiVerdict.slice(0,200) : ""),
+    labelTextsRead:   labelTexts,
+    observations:     raw.observations   || ""
+  };
+}
+
+function showPalletResult(dataUrl, v, obd) {
+  var verdict = (v.verdict||"REVIEW").toUpperCase();
+  var isPass  = verdict === "PASS";
+  var isFail  = verdict === "FAIL";
+  var confNum = parseFloat(v.confidence) || 0;
+  var confDisplay = Math.round(confNum * 100) + "%";
+  var icon  = isPass ? "✅" : isFail ? "❌" : "⚠️";
+  var bannerBg    = isPass ? "#f0fdf4" : isFail ? "#fff0f0" : "#fffbeb";
+  var bannerColor = isPass ? "#15803d" : isFail ? "#b91c1c" : "#b45309";
+
+  // FIX 4: strip automation noise from labelsRead
+  var cleanLabels = (v.labelTextsRead || []).map(function(lbl) {
+    return lbl.split(/Done!/i)[0].split(/Pick /i)[0].trim().replace(/,\s*$/, "");
+  }).filter(function(lbl){ return lbl.length > 0; });
+
+  // Persistent panel below HU table — FIX 3: add verdict badge + Replace Photo button
+  var panel = sap.ui.getCore().byId("palletPanel");
+  var img   = sap.ui.getCore().byId("palletImg");
+  var verd  = sap.ui.getCore().byId("palletVerdict");
+  if(panel && img && verd){
+    img.setContent(
+      "<div style='text-align:center;'>" +
+      "<img src='"+dataUrl+"' style='max-width:100%;max-height:220px;border-radius:6px;display:block;margin:8px auto;' />" +
+      "<div style='display:inline-block;margin:6px 4px 2px;background:"+bannerColor+";color:#fff;border-radius:10px;padding:2px 12px;font-size:13px;font-weight:600;'>"+icon+" "+verdict+"</div>" +
+      "<br/><button onclick='doGalleryReplace(\"__lastScan__\")' " +
+        "style='margin:6px 4px 8px;font-size:12px;padding:4px 12px;border:1px solid #0a6ed1;border-radius:4px;background:#fff;color:#0a6ed1;cursor:pointer;'>🔄 Replace Photo</button>" +
+      "</div>"
+    );
+    var summaryHtml =
+      "<div style='background:"+bannerBg+";border-left:4px solid "+bannerColor+";padding:8px 12px;border-radius:4px;margin-bottom:8px;'>" +
+      "<strong style='color:"+bannerColor+";font-size:16px;'>"+icon+" "+verdict+"</strong>" +
+      " &nbsp; <span style='color:#555;' title='How confident the AI vision model is in its scan assessment'>Scan Confidence: "+confDisplay+"</span>" +
+      " &nbsp; <span style='color:#555;'>Condition: "+(v.palletCondition||"?")+"</span></div>" +
+      (v.issues&&v.issues.length
+        ? v.issues.map(function(i){ return "<div style='color:#b91c1c;margin:3px 0;'>❌ "+i+"</div>"; }).join("")
+        : "<div style='color:#15803d;'>✅ No issues detected — pallet compliant</div>");
+    verd.setHtmlText(summaryHtml);
+    panel.setVisible(true);
+  }
+
+  // Issues list items for dialog
+  var issueItems = (v.issues||[]).map(function(issue){
+    return new sap.m.StandardListItem({ title: issue, icon:"sap-icon://error", highlight:"Error" });
+  });
+
+  // Checks grid HTML
+  var checksHtml =
+    "<div style='display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;'>" +
+    "<div style='color:"+(v.huLabelDetected?"#15803d":"#b91c1c")+"'>"+(v.huLabelDetected?"✅":"❌")+" HU Label "+(v.huLabelDetected?"detected":"not found")+"</div>" +
+    "<div style='color:"+(v.stackingCompliant!==false?"#15803d":"#b91c1c")+"'>"+(v.stackingCompliant!==false?"✅":"❌")+" Stacking "+(v.stackingCompliant!==false?"compliant":"NON-COMPLIANT")+"</div>" +
+    "<div style='color:"+(v.wrapIntegrity==="PASS"?"#15803d":"#b91c1c")+"'>"+(v.wrapIntegrity==="PASS"?"✅":"❌")+" Wrap integrity: "+(v.wrapIntegrity||"?")+"</div>" +
+    "<div style='color:"+(v.palletCondition==="GOOD"?"#15803d":"#b91c1c")+"'>"+(v.palletCondition==="GOOD"?"✅":"❌")+" Pallet: "+(v.palletCondition||"?")+"</div>" +
+    "</div>";
+
+  var oDlg = new sap.m.Dialog({
+    title: icon + " Pallet Scan — Delivery " + obd,
+    contentWidth: "540px",
+    content:[
+      new sap.ui.core.HTML({ content:
+        "<div style='background:"+bannerBg+";border-left:4px solid "+bannerColor+";padding:10px 14px;margin:8px 16px;border-radius:4px;'>" +
+        "<strong style='color:"+bannerColor+";font-size:18px;'>"+icon+" "+verdict+"</strong>" +
+        " &nbsp; <span style='color:#444;font-size:14px;' title='How confident the AI vision model is in its scan assessment'>Scan Confidence: <strong>"+confDisplay+"</strong></span>" +
+        " &nbsp; <span style='color:#444;font-size:14px;'>Condition: <strong>"+(v.palletCondition||"?")+"</strong></span>" +
+        "</div>"
+      }),
+      new sap.ui.core.HTML({ content: '<div style="text-align:center;padding:4px 16px;"><img src="'+dataUrl+'" style="max-width:100%;max-height:160px;border-radius:6px;" /></div>' }),
+      new sap.m.Panel({ headerText:"Checks", expandable:true, expanded:true,
+        content:[ new sap.ui.core.HTML({ content: checksHtml }) ]
+      }).addStyleClass("sapUiSmallMarginTopBottom sapUiSmallMarginBeginEnd"),
+      issueItems.length
+        ? new sap.m.Panel({ headerText:"Issues Found ("+issueItems.length+")", expandable:true, expanded:true,
+            content:[
+              new sap.ui.core.HTML({ content:
+                "<div style='padding:8px 12px;'>" +
+                (v.issues||[]).map(function(i){ return "<div style='color:#b91c1c;margin:4px 0;'>❌ "+i+"</div>"; }).join("") +
+                "</div>"
+              })
+            ]
+          }).addStyleClass("sapUiSmallMarginBeginEnd")
+        : new sap.m.MessageStrip({ text:"✅ No issues detected — pallet is compliant.", type:"Success" }).addStyleClass("sapUiSmallMarginBeginEnd"),
+      new sap.m.Panel({ headerText:"Recommendation", expandable:true, expanded:true,
+        content:(function(){
+          var recText = v.recommendation || "";
+          var isRusty = /rust|rusty|scrap|corrosion/i.test(recText);
+          var items = [ new sap.m.Text({ text: recText }).addStyleClass("sapUiSmallMargin") ];
+          if (isRusty) {
+            var statusHtml = new sap.ui.core.HTML("rustyActionStatus", { content:"" });
+            var yesBtn = new sap.m.Button({
+              text: "✅ Yes — Cancel Pick", type: "Accept", icon: "sap-icon://accept",
+              press: function() {
+                var huId = (oM.getProperty("/scanResult/huResults")||[]).map(function(h){ return h.huId; }).join(",") || obd;
+                var wh   = oM.getProperty("/warehouse") || "2001";
+                yesBtn.setEnabled(false); noBtn.setEnabled(false);
+                statusHtml.setContent("<div style='color:#b45309;padding:6px 0;font-size:12px;'>⏳ Cancelling pick...</div>");
+                api("/cancelPicking", { huId: huId, outboundDelivery: obd, warehouse: wh, itemNo: "10" })
+                  .then(function(d){
+                    statusHtml.setContent(
+                      "<div style='background:#f0faf0;border-left:3px solid #107e3e;padding:8px 12px;border-radius:4px;margin-top:6px;font-size:13px;font-weight:600;color:#107e3e;'>" +
+                      "✅ Pick cancelled</div>"
+                    );
+                    toastOK("✅ Pick cancelled");
+                  }).catch(function(e){
+                    statusHtml.setContent("<div style='color:#b91c1c;font-size:12px;padding:6px 0;'>⚠️ Failed: " + e.message + "</div>");
+                    yesBtn.setEnabled(true); noBtn.setEnabled(true);
+                  });
+              }
+            }).addStyleClass("sapUiTinyMarginEnd");
+            var noBtn = new sap.m.Button({
+              text: "✗ No, I'll handle manually", type: "Default",
+              press: function(){
+                statusHtml.setContent("<div style='color:#555;font-size:12px;padding:6px 0;'>Manual handling selected — resolve via EWM directly.</div>");
+                yesBtn.setEnabled(false); noBtn.setEnabled(false);
+              }
+            });
+            items.push(
+              new sap.m.HBox({ items:[ yesBtn, noBtn ], wrap:"Wrap" }).addStyleClass("sapUiSmallMarginBegin sapUiSmallMarginBottom"),
+              statusHtml
+            );
+          }
+          return items;
+        })()
+      }).addStyleClass("sapUiTinyMarginTop sapUiSmallMarginBeginEnd"),
+      // FIX 4: clean labels — strip automation noise
+      cleanLabels.length
+        ? new sap.m.Panel({ headerText:"Labels Read", expandable:true, expanded:false,
+            content:[ new sap.m.Text({ text: cleanLabels.join(", ") }).addStyleClass("sapUiSmallMargin") ]
+          }).addStyleClass("sapUiTinyMarginTop sapUiSmallMarginBeginEnd")
+        : null
+    ].filter(Boolean),
+    endButton: new sap.m.Button({ text:"Close", press:function(){ oDlg.close(); oDlg.destroy(); } })
+  });
+  oDlg.open();
+}
+
+function doPalletFile(replaceHuId) {
+  var file=this.files&&this.files[0]; if(!file) return;
+  var targetHuId = (typeof replaceHuId === "string" && replaceHuId && replaceHuId !== "__lastScan__") ? replaceHuId : (this._targetHuId || null);
+  this._targetHuId = null;
+  var obd=palletOBD||oM.getProperty("/delivery");
+  var wh=oM.getProperty("/warehouse");
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    var dataUrl=ev.target.result;
+    var b64=dataUrl.split(",")[1];
+
+    // Show image immediately with spinner
+    var panel = sap.ui.getCore().byId("palletPanel");
+    var img   = sap.ui.getCore().byId("palletImg");
+    var verd  = sap.ui.getCore().byId("palletVerdict");
+    if(panel && img && verd){
+      img.setContent('<img src="'+dataUrl+'" style="max-width:100%;max-height:220px;border-radius:6px;display:block;margin:8px auto;" />');
+      verd.setHtmlText("<em>🔍 AI Vision Agent analysing pallet image...</em>");
+      panel.setVisible(true);
+    }
+
+    oM.setProperty("/busy",true);
+    api("/scanPallet",{ outboundDelivery:obd, warehouse:wh, imageBase64:b64, imageMediaType:file.type })
+      .then(function(d){
+        oM.setProperty("/busy",false); palletOBD=null;
+        var raw = (d.value && typeof d.value==="object") ? d.value : d;
+        var v = normPalletResult(raw);
+
+        // Store per-HU image + verdict in model — use HU ID if known, else timestamp key
+        var imgs = oM.getProperty("/palletImages") || {};
+        var huKey = targetHuId || ("scan_" + Date.now());
+        imgs[huKey] = { dataUrl: dataUrl, verdict: v.verdict, confidence: v.confidence, huId: targetHuId || null };
+        oM.setProperty("/palletImages", imgs);
+
+        // Update HU table Label + Stacking columns from scan result
+        applyPalletScanToHUTable(v, targetHuId);
+        // Re-render result to refresh KPIs, dispatch steps and verdict banner
+        var sr = oM.getProperty("/scanResult");
+        if (sr) renderResult(sr);
+
+        showPalletResult(dataUrl, v, obd);
+        renderGallery();
+        if (targetHuId) {
+          toastOK("HU " + targetHuId + " re-scanned — " + (v.verdict || "REVIEW"));
+        }
+      }).catch(function(e){
+        oM.setProperty("/busy",false);
+        // Clear the "analysing..." spinner
+        var verd = sap.ui.getCore().byId("palletVerdict");
+        if (verd) verd.setHtmlText("<em style='color:#b91c1c;'>⚠️ Scan failed: " + e.message + "</em>");
+        toastErr("Pallet scan failed: "+e.message);
+      });
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ── Apply pallet scan results to HU table rows ────────────────────────── */
+function extractHUFromLabelsRead(labelsRead) {
+  if (!labelsRead || !labelsRead.length) return null;
+  var text = labelsRead.join(" ");
+  var m = text.match(/\d{6,}/);
+  return m ? m[0] : null;
+}
+
+function applyPalletScanToHUTable(v, targetHuId) {
+  var hus = oM.getProperty("/scanResult/huResults");
+  if (!hus || !hus.length) return;
+
+  // Determine which HU(s) to update — targeted replace or all
+  var scannedHU = extractHUFromLabelsRead(v.labelTextsRead);
+
+  hus.forEach(function(hu, i) {
+    // Only update targeted HU (Replace Photo), or all HUs if scanning from delivery-level
+    if (targetHuId && hu.huId !== targetHuId) return;
+
+    // Label status
+    var labelVal;
+    if (scannedHU && scannedHU !== hu.huId) {
+      labelVal = "Mismatch";
+    } else if (v.huLabelDetected) {
+      labelVal = "OK";
+    } else {
+      labelVal = "Not Found";
+    }
+    oM.setProperty("/scanResult/huResults/" + i + "/labelStatus", labelVal);
+
+    // Stacking — only update when scan explicitly returned a value
+    if (v.stackingCompliant !== undefined && v.stackingCompliant !== null) {
+      oM.setProperty("/scanResult/huResults/" + i + "/stackingCompliant", !!v.stackingCompliant);
+    }
+
+    // Mark HU as pallet-scanned and update status from verdict
+    oM.setProperty("/scanResult/huResults/" + i + "/palletScanned", true);
+    if (v.verdict === "FAIL") {
+      oM.setProperty("/scanResult/huResults/" + i + "/status", "Failed");
+      oM.setProperty("/scanResult/huResults/" + i + "/passed", false);
+    } else if (v.verdict === "REVIEW") {
+      oM.setProperty("/scanResult/huResults/" + i + "/status", "Review");
+      oM.setProperty("/scanResult/huResults/" + i + "/passed", false);
+    } else if (v.verdict === "PASS") {
+      oM.setProperty("/scanResult/huResults/" + i + "/status", "Passed");
+      oM.setProperty("/scanResult/huResults/" + i + "/passed", true);
+    }
+
+    // Label mismatch warning modal
+    if (scannedHU && scannedHU !== hu.huId) {
+      setTimeout(function() {
+        showLabelMismatch(scannedHU, hu.huId);
+      }, 300);
+    }
+  });
+}
+
+/* ── Pallet Gallery ─────────────────────────────────────────────────────── */
+function renderGallery() {
+  var hus  = oM.getProperty("/scanResult/huResults") || [];
+  var imgs = oM.getProperty("/palletImages") || {};
+  var galleryPanel = sap.ui.getCore().byId("palletGalleryPanel");
+  if (!galleryPanel) return;
+
+  var allKeys = Object.keys(imgs);
+  if (allKeys.length === 0) { galleryPanel.setVisible(false); return; }
+  galleryPanel.setVisible(true);
+
+  // Build cards: first HU-keyed entries, then timestamp-keyed extras
+  var cards = [];
+
+  // HU-keyed images
+  hus.forEach(function(hu) {
+    var img = imgs[hu.huId];
+    if (!img) return;
+    var verdict = (img.verdict || "REVIEW").toUpperCase();
+    var isPass = verdict === "PASS", isFail = verdict === "FAIL";
+    var badgeBg  = isPass ? "#107e3e" : isFail ? "#b91c1c" : "#e76500";
+    var badgeIcon = isPass ? "✅" : isFail ? "❌" : "⚠️";
+    cards.push(
+      "<div style='width:160px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);background:#fff;'>"+
+      "<img src='"+img.dataUrl+"' style='width:100%;height:110px;object-fit:cover;border-radius:6px 6px 0 0;display:block;' />"+
+      "<div style='padding:8px;'>"+
+        "<div style='font-size:12px;font-weight:600;color:#333;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' title='"+hu.huId+"'>"+hu.huId+"</div>"+
+        "<div style='display:inline-block;background:"+badgeBg+";color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-bottom:6px;'>"+badgeIcon+" "+verdict+"</div><br/>"+
+        "<button onclick='doGalleryReplace(\""+hu.huId+"\")' style='font-size:11px;padding:3px 8px;border:1px solid #0a6ed1;border-radius:4px;background:#fff;color:#0a6ed1;cursor:pointer;width:100%;'>🔄 Replace Photo</button>"+
+      "</div></div>"
+    );
+  });
+
+  // Timestamp-keyed images (scanned without specific HU target)
+  allKeys.filter(function(k){ return k.indexOf("scan_") === 0; }).sort().forEach(function(k, i) {
+    var img = imgs[k];
+    var verdict = (img.verdict || "REVIEW").toUpperCase();
+    var isPass = verdict === "PASS", isFail = verdict === "FAIL";
+    var badgeBg  = isPass ? "#107e3e" : isFail ? "#b91c1c" : "#e76500";
+    var badgeIcon = isPass ? "✅" : isFail ? "❌" : "⚠️";
+    cards.push(
+      "<div style='width:160px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.07);background:#fff;'>"+
+      "<img src='"+img.dataUrl+"' style='width:100%;height:110px;object-fit:cover;border-radius:6px 6px 0 0;display:block;' />"+
+      "<div style='padding:8px;'>"+
+        "<div style='font-size:12px;font-weight:600;color:#333;margin-bottom:4px;'>Scan "+(i+1)+"</div>"+
+        "<div style='display:inline-block;background:"+badgeBg+";color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-bottom:6px;'>"+badgeIcon+" "+verdict+"</div>"+
+      "</div></div>"
+    );
+  });
+
+  var container = document.getElementById("palletGallery");
+  if (container) container.innerHTML = cards.join("");
+}
+
+function doGalleryReplace(huId) {
+  var fi = document.getElementById("palletFileReplace");
+  if (!fi) {
+    fi = document.createElement("input");
+    fi.type = "file"; fi.id = "palletFileReplace"; fi.accept = "image/*";
+    fi.capture = "environment"; fi.style.display = "none";
+    document.body.appendChild(fi);
+  }
+  fi.value = ""; // reset so same file triggers change again
+  fi._replaceHuId = huId;
+  fi.onchange = function() {
+    doPalletFile.call(this, this._replaceHuId);
+    // show toast after scan completes — done inside doPalletFile callback
+  };
+  fi.click();
+}
+
+/* ── Demo pallet shortcuts ──────────────────────────────────────────────── */
+var DEMO_PALLET_FILES = {
+  "OK":      "demo-pallets/HU_881353_Tea_Pasta_EnergyDrink_OK.jpg",
+  "BADSTACK":"demo-pallets/HU_881353_Tea_Pasta_EnergyDrink_FAIL.jpg",
+  "RUSTY":   "demo-pallets/HU_881353_Rust_Cerals_Beans_FAIL.jpg",
+  "LOOSE":   "demo-pallets/HU_881353_Cerals_Beans_FAIL.jpg"
+};
+function doDemoPallet(type) {
+  var obd = oM.getProperty("/delivery") || "881353";
+  var wh  = oM.getProperty("/warehouse") || "2001";
+  var url = DEMO_PALLET_FILES[type];
+  if (!url) return;
+
+  // Show spinner in panel immediately
+  var panel = sap.ui.getCore().byId("palletPanel");
+  var img   = sap.ui.getCore().byId("palletImg");
+  var verd  = sap.ui.getCore().byId("palletVerdict");
+
+  fetch(url)
+    .then(function(r){ return r.blob(); })
+    .then(function(blob){
+      var reader = new FileReader();
+      reader.onload = function(ev){
+        var dataUrl = ev.target.result;
+        var b64 = dataUrl.split(",")[1];
+        var mediaType = blob.type || "image/jpeg";
+        if(panel && img && verd){
+          img.setContent('<img src="'+dataUrl+'" style="max-width:100%;max-height:220px;border-radius:6px;display:block;margin:8px auto;" />');
+          verd.setHtmlText("<em>🔍 AI Vision Agent analysing pallet image...</em>");
+          panel.setVisible(true);
+        }
+        oM.setProperty("/busy",true);
+        api("/scanPallet",{ outboundDelivery:obd, warehouse:wh, imageBase64:b64, imageMediaType:mediaType })
+          .then(function(d){
+            oM.setProperty("/busy",false);
+            var raw = (d.value && typeof d.value==="object") ? d.value : d;
+            var v = normPalletResult(raw);
+            // Store in gallery model keyed by delivery
+            var imgs = oM.getProperty("/palletImages") || {};
+            imgs[obd] = { dataUrl: dataUrl, verdict: v.verdict, confidence: v.confidence };
+            oM.setProperty("/palletImages", imgs);
+            applyPalletScanToHUTable(v, null);
+            var sr = oM.getProperty("/scanResult");
+            if (sr) renderResult(sr);
+            showPalletResult(dataUrl, v, obd);
+            renderGallery();
+          }).catch(function(e){ oM.setProperty("/busy",false); toastErr("Scan failed: "+e.message); });
+      };
+      reader.readAsDataURL(blob);
+    }).catch(function(e){ toastWarn("Demo image not found — place images in webapp/demo-pallets/"); });
+}
+
+function doChat() {
+  var input=sap.ui.getCore().byId("chatIn");
+  var msg=(input?input.getValue():"").trim();
+  if(!msg) return;
+  if(input) input.setValue("");
+  var area=document.getElementById("chatMsgs");
+  if(area){
+    area.innerHTML+="<div class='cUser'><div class='bbl'>"+msg.replace(/&/g,"&amp;").replace(/</g,"&lt;")+"</div></div>";
+    area.scrollTop=area.scrollHeight;
+  }
+  var sr=oM.getProperty("/scanResult");
+  api("/chat",{ message:msg, context:sr?JSON.stringify({delivery:sr.outboundDelivery,status:sr.dispatchStatus}):"" })
+    .then(function(d){
+      var reply=(d.reply||(d.value&&d.value.reply))||"No response.";
+      if(area){ area.innerHTML+="<div class='cAI'><div class='av'>AI</div><div class='bbl'>"+md(reply)+"</div></div>"; area.scrollTop=area.scrollHeight; }
+    }).catch(function(e){
+      if(area){ area.innerHTML+="<div class='cAI'><div class='av'>AI</div><div class='bbl' style='color:#bb0000'>Error: "+e.message+"</div></div>"; area.scrollTop=area.scrollHeight; }
+    });
+}
+
+/* ── Feature 1: Block Reason Drill-down ─────────────────────────────────── */
+function doDiagnoseBlock(evt) {
+  var huId=evt.getSource().data("huId");
+  var wh=oM.getProperty("/warehouse");
+  oM.setProperty("/busy",true);
+  api("/diagnoseBlockReason",{ huId:huId, warehouse:wh })
+    .then(function(d){
+      oM.setProperty("/busy",false);
+      var r=d.value||d;
+      var oList=new sap.m.List({ showSeparators:"Inner" });
+      [
+        { label:"Content Change Block", val:r.contentBlocked },
+        { label:"Movement Block",       val:r.movementBlocked },
+        { label:"Posting Block",        val:r.postingBlocked },
+        { label:"Customs Hold",         val:r.customsBlocked }
+      ].forEach(function(row){
+        oList.addItem(new sap.m.DisplayListItem({
+          label: row.label,
+          value: row.val ? "⚠ YES — ACTIVE" : "No",
+          valueTextDirection:"LTR"
+        }));
+      });
+      var oDlg=new sap.m.Dialog({
+        title:"Block Diagnosis — "+huId,
+        contentWidth:"520px",
+        content:[
+          new sap.m.VBox({ items:[
+            new sap.m.MessageStrip({ text:r.primaryReason||"Block active", type:"Error", showIcon:true }).addStyleClass("sapUiSmallMarginBottom"),
+            oList,
+            new sap.m.Panel({ headerText:"AI Diagnosis", expandable:true, expanded:true,
+              content:[ new sap.m.FormattedText({ htmlText:md(r.aiExplanation||"No AI analysis."), width:"100%" }) ]
+            }).addStyleClass("sapUiSmallMarginTop")
+          ]}),
+        ],
+        endButton: new sap.m.Button({ text:"Close", press:function(){ oDlg.close(); oDlg.destroy(); } })
+      });
+      oDlg.open();
+    }).catch(function(e){ oM.setProperty("/busy",false); toastErr("Diagnose failed: "+e.message); });
+}
+
+/* ── Feature 2: Supervisor Incident Report ──────────────────────────────── */
+function doAlertSupervisor() {
+  var sr=oM.getProperty("/scanResult")||{};
+  var obd=oM.getProperty("/delivery");
+  var wh=oM.getProperty("/warehouse");
+  var failedHU=(sr.huResults||[]).find(function(h){ return !h.passed; });
+  oM.setProperty("/busy",true);
+  api("/createIncident",{
+    huId: failedHU?failedHU.huId:"",
+    outboundDelivery:obd, warehouse:wh,
+    failureType: sr.failureType||"BLOCKED"
+  }).then(function(d){
+    oM.setProperty("/busy",false);
+    var r=d.value||d;
+    var emailStrip = r.emailSent
+      ? new sap.m.MessageStrip({ text:"Email sent to "+r.supervisorEmail, type:"Success", showIcon:true }).addStyleClass("sapUiSmallMarginBottom")
+      : new sap.m.MessageStrip({ text:"Click 'Send Email' to notify supervisor in Outlook.", type:"Information", showIcon:true }).addStyleClass("sapUiSmallMarginBottom");
+    var oInfoList=new sap.m.List({ showSeparators:"Inner" });
+    [
+      { label:"Incident ID",       value:r.incidentId||"—" },
+      { label:"Time",              value:r.timestamp?new Date(r.timestamp).toLocaleString():"—" },
+      { label:"Delivery",          value:r.outboundDelivery||obd },
+      { label:"Handling Unit",     value:r.huId||"—" },
+      { label:"Failure Type",      value:r.failureType||"—" },
+      { label:"Est. Resolution",   value:r.estimatedResolutionTime||"—" }
+    ].forEach(function(row){
+      oInfoList.addItem(new sap.m.DisplayListItem({ label:row.label, value:row.value }));
+    });
+    var oDlg=new sap.m.Dialog({
+      title:"Supervisor Incident Report",
+      contentWidth:"560px", resizable:true,
+      content:[
+        new sap.m.VBox({ items:[
+          new sap.m.MessageStrip({ text:"Incident "+(r.incidentId||"created")+" — ready to share with supervisor", type:"Error", showIcon:true }).addStyleClass("sapUiSmallMarginBottom"),
+          emailStrip,
+          oInfoList,
+          new sap.m.Panel({ headerText:"AI Root Cause", expandable:true, expanded:true,
+            content:[ new sap.m.FormattedText({ htmlText:md(r.aiRootCause||""), width:"100%" }) ]
+          }).addStyleClass("sapUiSmallMarginTop"),
+          new sap.m.Panel({ headerText:"Full Incident Report", expandable:true, expanded:false,
+            content:[ new sap.m.TextArea({ value:r.incidentText||"", rows:8, editable:false, width:"100%" }) ]
+          }).addStyleClass("sapUiSmallMarginTop")
+        ]})
+      ],
+      beginButton: new sap.m.Button({
+        text:"Copy to Clipboard", icon:"sap-icon://copy", type:"Emphasized",
+        press:function(){
+          if(navigator.clipboard) navigator.clipboard.writeText(r.incidentText||"");
+          toastOK("Incident report copied to clipboard.");
+        }
+      }),
+      endButton: new sap.m.Button({ text:"Close", press:function(){ oDlg.close(); oDlg.destroy(); } }),
+      buttons:[ new sap.m.Button({
+        text:"Send Email", icon:"sap-icon://email", type:"Emphasized",
+        press:function(){
+          var sub=encodeURIComponent("[INCIDENT] "+(r.incidentId||"")+" — "+(r.failureType||"")+" on delivery "+(r.outboundDelivery||obd));
+          var body=encodeURIComponent(r.incidentText||"");
+          window.open("mailto:geeta.fulwani@sap.com?subject="+sub+"&body="+body);
+        }
+      })]
+    });
+    oDlg.open();
+  }).catch(function(e){ oM.setProperty("/busy",false); toastErr("Alert failed: "+e.message); });
+}
+
+/* ── Feature 3: Alternative HU Finder ──────────────────────────────────── */
+var _altDlg = null;
+var _altBusy = false;
+var _altBtn  = null;
+function doFindAlternatives(evt) {
+  if (_altBusy) return;  // single gate — covers both loading and dialog-open states
+  _altBusy = true;
+
+  // Disable the pressed button immediately so repeated taps are impossible
+  _altBtn = evt.getSource();
+  _altBtn.setEnabled(false);
+  _altBtn.setIcon("sap-icon://synchronize");
+
+  var huId = _altBtn.data("huId");
+  var wh=oM.getProperty("/warehouse");
+  var obd=oM.getProperty("/delivery");
+
+  oM.setProperty("/busy",true);
+  api("/findAlternativeHUs",{ huId:huId, warehouse:wh, outboundDelivery:obd })
+    .then(function(d){
+      oM.setProperty("/busy",false);
+      var r=d.value||d;
+      var candidates=r.candidates||[];
+      var best=candidates.find(function(c){ return c.huId===r.bestCandidate; })||candidates[0];
+      var others=candidates.filter(function(c){ return c.huId!==(best&&best.huId); });
+
+      // ── Best candidate card ─────────────────────────────────────────────
+      var oBestCard=new sap.m.Panel({
+        backgroundDesign:"Solid",
+        content:[
+          new sap.m.VBox({ items:[
+            new sap.m.ObjectStatus({ text:"✅ Best Match", state:"Success" }).addStyleClass("sapUiTinyMarginBottom"),
+            new sap.m.Title({ text: best ? best.huId : "—", level:"H5" }).addStyleClass("sapUiTinyMarginBottom"),
+            new sap.m.Text({ text: best
+              ? (best.expectedWeight||0)+" LB  |  Bin: "+(best.storageBin||"—")+
+                (best.productName ? "  |  "+best.productName : (best.packagingMaterial ? "  |  "+best.packagingMaterial : ""))
+              : "No match found" })
+          ]}).addStyleClass("sapUiSmallMargin")
+        ]
+      }).addStyleClass("sapUiSmallMarginBottom");
+      // Green highlight for best candidate
+      oBestCard.addEventDelegate({ onAfterRendering: function() {
+        var el = oBestCard.getDomRef();
+        if (el) { el.style.background="#f0fdf4"; el.style.border="2px solid #22c55e"; el.style.borderRadius="8px"; }
+      }});
+
+      // ── Other candidates compact list ───────────────────────────────────
+      var oOthersList=new sap.m.List({ showSeparators:"Inner", noDataText:"No other candidates." });
+      others.forEach(function(c){
+        var matLabel = c.productName || c.packagingMaterial || "";
+        oOthersList.addItem(new sap.m.StandardListItem({
+          title: "HU "+c.huId,
+          description: (c.expectedWeight||0)+" LB  |  Bin: "+(c.storageBin||"—")+(matLabel?"  |  "+matLabel:""),
+          icon:"sap-icon://product", iconInset:false
+        }));
+      });
+
+      // ── Dialog ──────────────────────────────────────────────────────────
+      _altDlg=new sap.m.Dialog({
+        title:"🔄 Alternative HUs for "+huId,
+        contentWidth:"480px",
+        afterClose: function(){
+          var d = _altDlg; _altDlg = null; _altBusy = false;
+          if (_altBtn) { try { _altBtn.setEnabled(true); _altBtn.setIcon("sap-icon://switch-views"); } catch(_){} _altBtn = null; }
+          if (d) { try { d.destroy(); } catch(_){} }
+        },
+        content:[
+          new sap.m.VBox({ items:[
+            candidates.length===0
+              ? new sap.m.MessageStrip({ text:"No suitable alternatives found in warehouse "+wh+".", type:"Warning", showIcon:true })
+              : oBestCard,
+            candidates.length>0 && others.length>0
+              ? new sap.m.Panel({ headerText:"Other available stock", expandable:false, content:[oOthersList] })
+              : new sap.m.Text()
+          ]})
+        ],
+        beginButton: new sap.m.Button({
+          text:"Swap Now", type:"Emphasized", icon:"sap-icon://synchronize",
+          visible: !!(best && best.huId),
+          press:function(){
+            var oldHuId = huId;
+            var newHuId = r.bestCandidate;
+            var wh = oM.getProperty("/warehouse")||"2001";
+            if(_altDlg){ _altDlg.close(); }
+            oM.setProperty("/busy", true);
+            api("/cancelPicking", { huId: oldHuId, outboundDelivery: obd, warehouse: wh, itemNo: "" })
+              .then(function(){
+                return api("/createPick", { huId: newHuId, outboundDelivery: obd, warehouse: wh });
+              })
+              .then(function(){
+                oM.setProperty("/busy", false);
+                toastOK("✅ Pick swapped — HU " + oldHuId + " cancelled, HU " + newHuId + " pick created");
+              })
+              .catch(function(e){
+                oM.setProperty("/busy", false);
+                toastWarn("⚠️ Swap failed: " + e.message);
+              });
+          }
+        }),
+        endButton: new sap.m.Button({ text:"Close", press:function(){ if(_altDlg){ _altDlg.close(); } } })
+      });
+      _altDlg.open();
+    }).catch(function(e){
+      _altBusy=false;
+      if (_altBtn) { try { _altBtn.setEnabled(true); _altBtn.setIcon("sap-icon://switch-views"); } catch(_){} _altBtn = null; }
+      oM.setProperty("/busy",false);
+      toastErr("Alternatives failed: "+e.message);
+    });
+}
+
+/* ── Feature 4: Repack Suggestion ──────────────────────────────────────── */
+function doRepackSuggestion(evt) {
+  var huId=evt.getSource().data("huId");
+  var obd=oM.getProperty("/delivery");
+  var wh=oM.getProperty("/warehouse");
+  oM.setProperty("/busy",true);
+  api("/getRepackSuggestion",{ huId:huId, outboundDelivery:obd, warehouse:wh })
+    .then(function(d){
+      oM.setProperty("/busy",false);
+      var r=d.value||d;
+      var oStepsList=new sap.m.List({ showSeparators:"Inner" });
+      (r.steps||[]).forEach(function(step,i){
+        oStepsList.addItem(new sap.m.StandardListItem({
+          title: (i+1)+". "+step,
+          icon: "sap-icon://forward", iconInset:false
+        }));
+      });
+      var delta=parseFloat(r.deltaLB||0).toFixed(2);
+      var oDlg=new sap.m.Dialog({
+        title:"Repack Suggestion — "+huId,
+        contentWidth:"520px",
+        content:[
+          new sap.m.VBox({ items:[
+            new sap.m.MessageStrip({
+              text: r.direction==="OVER"
+                ?"Overweight by "+Math.abs(delta)+" LB — items must be removed"
+                :"Underweight by "+Math.abs(delta)+" LB — items must be added",
+              type:"Warning", showIcon:true
+            }).addStyleClass("sapUiSmallMarginBottom"),
+            new sap.m.Panel({ headerText:"AI Repack Instruction", expandable:true, expanded:true,
+              content:[ new sap.m.FormattedText({ htmlText:md(r.repackInstruction||""), width:"100%" }) ]
+            }).addStyleClass("sapUiSmallMarginBottom"),
+            new sap.m.Panel({ headerText:"Steps", expandable:true, expanded:true,
+              content:[ oStepsList ]
+            }).addStyleClass("sapUiSmallMarginBottom"),
+            new sap.m.HBox({ items:[
+              new sap.m.ObjectStatus({
+                text:"Estimated weight after repack: "+parseFloat(r.estimatedNewWeight||0).toFixed(2)+" LB",
+                state: r.withinTolerance?"Success":"Warning"
+              })
+            ]})
+          ]})
+        ],
+        endButton: new sap.m.Button({ text:"Close", press:function(){ oDlg.close(); oDlg.destroy(); } })
+      });
+      oDlg.open();
+    }).catch(function(e){ oM.setProperty("/busy",false); toastErr("Repack failed: "+e.message); });
+}
+
+/* ── Feature: Cancel Pick ───────────────────────────────────────────────── */
+function doCancelPick(evt) {
+  var huId = evt.getSource().getCustomData()[0].getValue();
+  var sr   = oM.getProperty("/scanResult") || {};
+  var obd  = oM.getProperty("/delivery") || sr.outboundDelivery || "";
+  var wh   = oM.getProperty("/warehouse") || "2001";
+  if (!obd) { toastWarn("No delivery in context."); return; }
+
+  var oConfirmDlg = new sap.m.Dialog({
+    title: "Cancel Pick",
+    type: "Message",
+    state: "Warning",
+    content: [ new sap.m.Text({ text: "Are you sure you want to cancel the pick for HU " + huId + "?\n\nThis action cannot be undone." }) ],
+    beginButton: new sap.m.Button({
+      text: "✅ Yes, Cancel Pick", type: "Reject",
+      press: function() {
+        oConfirmDlg.close();
+        oConfirmDlg.destroy();
+        oM.setProperty("/busy", true);
+        api("/cancelPicking", { huId: huId, outboundDelivery: obd, warehouse: wh, itemNo: "000010" })
+          .then(function(d) {
+            oM.setProperty("/busy", false);
+            var v = (d.value && typeof d.value === "object") ? d.value : d;
+            var strip = new sap.m.MessageStrip({
+              text: v.success
+                ? "✅ Pick cancelled — " + (v.gmitems || 0) + " stock movement(s) processed."
+                : "⚠️ " + (v.message || "Cancel pick failed."),
+              type: v.success ? "Success" : "Warning",
+              showCloseButton: true
+            });
+            var oResultDlg = new sap.m.Dialog({
+              title: "Cancel Pick — " + huId,
+              contentWidth: "520px",
+              content: [
+                strip,
+                new sap.m.Panel({
+                  headerText: "AI Guidance",
+                  expandable: true,
+                  expanded: true,
+                  content: [ new sap.m.FormattedText({ htmlText: md(v.aiGuidance || "") }) ]
+                })
+              ],
+              endButton: new sap.m.Button({ text: "Close", press: function() { oResultDlg.close(); oResultDlg.destroy(); } })
+            });
+            oResultDlg.open();
+          })
+          .catch(function(e) {
+            oM.setProperty("/busy", false);
+            toastErr("Cancel pick failed: " + e.message);
+          });
+      }
+    }),
+    endButton: new sap.m.Button({
+      text: "✗ No, Keep Pick", type: "Default",
+      press: function() { oConfirmDlg.close(); oConfirmDlg.destroy(); }
+    })
+  });
+  oConfirmDlg.open();
+}
+
+/* ── Weigh HU on scale ──────────────────────────────────────────────────── */
+function doWeighHU(evt) {
+  var huId = evt.getSource().getCustomData()[0].getValue();
+  var hus  = oM.getProperty("/scanResult/huResults") || [];
+  var hu   = hus.find(function(h){ return h.huId === huId; }) || {};
+  var expLb = parseFloat(hu.expectedWeight) || null;
+
+  // ── Live weight HTML element (updated by poll loop) ───────────────────
+  var weightHtml = new sap.ui.core.HTML({ id: "huWeightDisplay_" + huId, content: "<div id='hwDisp_"+huId+"' style='padding:12px 0;'><em style=\"color:#888;\">Waiting for scale...</em></div>" });
+  var stripCtrl  = new sap.m.MessageStrip({ id:"huWeightStrip_"+huId, text:"Connecting to scale...", type:"Information", showCloseButton:false }).addStyleClass("sapUiSmallMarginBottom");
+
+  // ── Scale connect row (shown when not connected) ───────────────────────
+  var scaleIpInput = new sap.m.Input({ id:"huScaleIp_"+huId, placeholder:"Scale IP:5000 e.g. 192.168.1.10:5000",
+    value: oM.getProperty("/scaleIP") || "", width:"100%" });
+  var connectBtn = new sap.m.Button({ text:"Connect Scale", icon:"sap-icon://connected", type:"Emphasized",
+    press: function(){
+      var ip = scaleIpInput.getValue().trim();
+      if (!ip){ toastWarn("Enter scale IP first"); return; }
+      oM.setProperty("/scaleIP", ip);
+      connectBtn.setEnabled(false); connectBtn.setText("Connecting...");
+      var baseUrl = ip.startsWith("http") ? ip.replace(/\/$/,"") : "http://"+ip;
+      // Connect directly from browser — scale must be on same network as client device
+      fetch(baseUrl + "/weight", { signal: AbortSignal.timeout(3000) })
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          oM.setProperty("/scaleConnected", true);
+          oM.setProperty("/scaleBaseUrl", baseUrl);
+          if (!scaleTimer) {
+            scaleTimer = setInterval(function(){
+              fetch(baseUrl + "/weight", { signal: AbortSignal.timeout(2000) })
+                .then(function(r){ return r.json(); })
+                .then(function(d){
+                  if (d.weight != null) {
+                    oM.setProperty("/scaleWeight", parseFloat(d.weight).toFixed(2));
+                    oM.setProperty("/scaleStable", !!d.stable);
+                    oM.setProperty("/scaleUnit",   (d.unit || "LB").toUpperCase());
+                  }
+                }).catch(function(){});
+            }, 800);
+          }
+          connectRow.setVisible(false);
+          toastOK("⚖️ Scale connected — " + ip);
+        })
+        .catch(function(e){
+          connectBtn.setEnabled(true); connectBtn.setText("Connect Scale");
+          toastErr("Cannot reach scale: " + e.message);
+        });
+    }
+  });
+  var connectRow = new sap.m.HBox({ visible: !oM.getProperty("/scaleConnected"),
+    items:[ scaleIpInput, new sap.m.ToolbarSpacer(), connectBtn ],
+    alignItems:"Center" }).addStyleClass("sapUiSmallMarginBottom");
+
+  var useWeightBtn = new sap.m.Button({ text:"Use This Weight", type:"Emphasized", enabled:false,
+    press: function(){
+      var rawVal = parseFloat(oM.getProperty("/scaleWeight"));
+      var unit   = (oM.getProperty("/scaleUnit") || "LB").toUpperCase();
+      if (isNaN(rawVal)){ toastWarn("No stable reading yet"); return; }
+      // actualWeight is stored in LB — convert from scale unit only if KG
+      var lb = unit === "KG" ? rawVal * 2.20462 : rawVal;
+      // Update the HU weight directly in the model, then re-scan
+      var hus = oM.getProperty("/scanResult/huResults") || [];
+      var idx = hus.findIndex(function(h){ return h.huId === huId; });
+      if (idx >= 0) {
+        oM.setProperty("/scanResult/huResults/" + idx + "/actualWeight", parseFloat(lb.toFixed(2)));
+      }
+      clearInterval(liveTimer);
+      try { oDlg.close(); oDlg.destroy(); } catch(e2) {}
+      toastInfo("Weight set to " + lb.toFixed(2) + " LB — re-validating...");
+      doRevalidate();
+    }
+  });
+
+  var oDlg = new sap.m.Dialog({
+    title: "⚖️ Live Weigh — HU " + huId,
+    contentWidth: "380px",
+    content:[ connectRow, stripCtrl, weightHtml ],
+    beginButton: useWeightBtn,
+    endButton: new sap.m.Button({ text:"Close", press:function(){ clearInterval(liveTimer); oDlg.close(); oDlg.destroy(); } })
+  });
+  oDlg.open();
+
+
+  // ── Poll loop — fetches scale directly every 800ms while dialog is open ─
+  var liveTimer = setInterval(function(){
+    var baseUrl = oM.getProperty("/scaleBaseUrl");
+    var conn    = oM.getProperty("/scaleConnected");
+    // Also try the IP input field in case model wasn't saved
+    if (!baseUrl) {
+      var ipVal = scaleIpInput ? scaleIpInput.getValue().trim() : "";
+      if (ipVal) baseUrl = ipVal.startsWith("http") ? ipVal.replace(/\/$/,"") : "http://"+ipVal;
+    }
+    if (!baseUrl) return;
+
+    fetch(baseUrl + "/weight", { signal: AbortSignal.timeout(2000) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.weight == null) return;
+        var rawVal = parseFloat(d.weight);
+        var unit   = (d.unit || "LB").toUpperCase();
+        // Store raw value + unit in model — no conversion
+        oM.setProperty("/scaleWeight", rawVal.toFixed(2));
+        oM.setProperty("/scaleUnit",   unit);
+        // For comparison: normalise both sides to LB
+        var dispLb   = unit === "KG" ? rawVal * 2.20462 : rawVal;
+        var deltaLb  = expLb ? dispLb - expLb : null;
+        var deltaPct = expLb ? (dispLb - expLb) / expLb * 100 : null;
+        var ok       = deltaPct !== null ? Math.abs(deltaPct) <= 5 : true;
+        var isOver   = deltaLb !== null && deltaLb > 0;
+
+        // Update weight display — show in scale's own unit
+        var el = document.getElementById("hwDisp_"+huId);
+        if (el) {
+          el.innerHTML =
+            "<div style='display:grid;grid-template-columns:auto auto;gap:5px 20px;padding:4px 0;'>" +
+            "<span style='color:#666;'>Scale reads</span>" +
+            "<strong style='font-size:22px;color:#0a6ed1;letter-spacing:1px;'>" + rawVal.toFixed(2) + " " + unit + "</strong>" +
+            (expLb ? "<span style='color:#666;'>Expected</span><strong>" + expLb.toFixed(2) + " LB</strong>" : "") +
+            (deltaLb !== null ?
+              "<span style='color:#666;'>Delta</span><strong style='color:" + (ok?"#15803d":"#b91c1c") + ";font-size:15px;'>" +
+              (isOver?"+":"") + deltaLb.toFixed(2) + " LB (" + (isOver?"+":"") + Math.abs(deltaPct).toFixed(1) + "%)</strong>" : "") +
+            "</div>";
+        }
+
+        // Update message strip
+        var strip = sap.ui.getCore().byId("huWeightStrip_"+huId);
+        if (strip) {
+          if (!ok) {
+            strip.setText("⚠️ Weight deviation " + (isOver?"+":"") + Math.abs(deltaPct).toFixed(1) + "% — exceeds ±5% threshold"); strip.setType("Error");
+          } else {
+            strip.setText("✅ Weight within tolerance ±5%"); strip.setType("Success");
+          }
+        }
+
+        useWeightBtn.setEnabled(true);
+      }).catch(function(){ useWeightBtn.setEnabled(false); });
+  }, 800);
+
+  // Stop poll when dialog closes
+  oDlg.attachAfterClose(function(){ clearInterval(liveTimer); });
+}
+
+/* ── Feature 5: Exception Dashboard helpers ─────────────────────────────── */
+var excRefreshTimer = null;
+
+function doRefreshExceptions() {
+  fetch(BASE+"/getExceptions",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({}) })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var list=data.value||data||[];
+      if(!Array.isArray(list)) list=[];
+      oM.setProperty("/exceptions", list);
+      var st=sap.ui.getCore().byId("excRefreshStatus");
+      if(st) st.setText("Last refresh: "+new Date().toLocaleTimeString()).setState(list.length?"Warning":"Success");
+    })
+    .catch(function(e){ toastErr("Exception refresh failed: "+e.message); });
+}
+
+function doResolveExceptionRow(evt) {
+  var src=evt.getSource();
+  src.setEnabled(false);
+  var huId=src.data("huId"), excType=src.data("excType"), wh=src.data("wh");
+  api("/resolveException",{ huId:huId, warehouse:wh, exceptionType:excType })
+    .then(function(d){
+      var msg = (d.resolutionAction||d.value&&d.value.resolutionAction||"Done")
+        .replace(/#{1,3} /g,"").replace(/\*\*/g,"").replace(/\*/g,"").replace(/\n/g," ").trim();
+      toastOK("Resolved: "+msg.substring(0,80));
+      doRefreshExceptions();
+    }).catch(function(e){
+      src.setEnabled(true);
+      toastErr("Resolve failed: "+e.message);
+    });
+}
+</script>
 </body>
 </html>

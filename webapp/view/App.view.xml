@@ -1,5 +1,7 @@
 <mvc:View
+    controllerName="com.loadassurance.agent.controller.App"
     xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
     displayBlock="true">
     <App id="appControl" />
 </mvc:View>
